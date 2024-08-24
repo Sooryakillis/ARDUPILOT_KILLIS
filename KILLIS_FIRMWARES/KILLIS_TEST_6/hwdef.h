@@ -134,12 +134,16 @@
 
 
 // SPI device table
-#define HAL_SPI_DEVICE0  SPIDesc("icm20602"       ,  1,  1, PAL_LINE(GPIOE,11U), SPIDEV_MODE3,   1*MHZ,   4*MHZ)
-#define HAL_SPI_DEVICE1  SPIDesc("sdcard"         ,  0,  1, PAL_LINE(GPIOA,4U) , SPIDEV_MODE0, 400*KHZ,  25*MHZ)
-#define HAL_SPI_DEVICE_LIST HAL_SPI_DEVICE0,HAL_SPI_DEVICE1
+#define HAL_SPI_DEVICE0  SPIDesc("bmi088_g"       ,  0,  1, PAL_LINE(GPIOD,7U) , SPIDEV_MODE3,  10*MHZ,  10*MHZ)
+#define HAL_SPI_DEVICE1  SPIDesc("bmi088_a"       ,  0,  2, PAL_LINE(GPIOD,4U) , SPIDEV_MODE3,  10*MHZ,  10*MHZ)
+#define HAL_SPI_DEVICE2  SPIDesc("icm42688"       ,  0,  3, PAL_LINE(GPIOE,0U) , SPIDEV_MODE3,   2*MHZ,   8*MHZ)
+#define HAL_SPI_DEVICE3  SPIDesc("icm20602"       ,  1,  1, PAL_LINE(GPIOE,11U), SPIDEV_MODE3,   1*MHZ,   4*MHZ)
+#define HAL_SPI_DEVICE_LIST HAL_SPI_DEVICE0,HAL_SPI_DEVICE1,HAL_SPI_DEVICE2,HAL_SPI_DEVICE3
 
+#define HAL_WITH_SPI_BMI088_G 1
+#define HAL_WITH_SPI_BMI088_A 1
+#define HAL_WITH_SPI_ICM42688 1
 #define HAL_WITH_SPI_ICM20602 1
-#define HAL_WITH_SPI_SDCARD 1
 
 // ADC config
 #define HAL_ANALOG_PINS \
@@ -196,6 +200,8 @@
 #define HAL_GPIO_PIN_BATT2_VOLTAGE_SENS   PAL_LINE(GPIOF,13U)
 #define HAL_GPIO_PIN_BATT_CURRENT_SENS    PAL_LINE(GPIOC,2U)
 #define HAL_GPIO_PIN_BATT_VOLTAGE_SENS    PAL_LINE(GPIOC,0U)
+#define HAL_GPIO_PIN_BMI055_DRDY_A        PAL_LINE(GPIOE,15U)
+#define HAL_GPIO_PIN_BMI055_DRDY_G        PAL_LINE(GPIOF,0U)
 #define HAL_GPIO_PIN_CAN1_RX              PAL_LINE(GPIOD,0U)
 #define HAL_GPIO_PIN_CAN1_TX              PAL_LINE(GPIOD,1U)
 #define HAL_GPIO_PIN_GPIO_CAN1_SILENT     PAL_LINE(GPIOD,3U)
@@ -205,6 +211,8 @@
 #define HAL_GPIO_PIN_I2C2_SCL             PAL_LINE(GPIOB,10U)
 #define HAL_GPIO_PIN_I2C2_SDA             PAL_LINE(GPIOB,11U)
 #define HAL_GPIO_PIN_I2C2_SCL             PAL_LINE(GPIOB,10U)
+#define HAL_GPIO_PIN_ICM42688_CS          PAL_LINE(GPIOE,0U)
+#define HAL_GPIO_PIN_ICM42688_DRDY        PAL_LINE(GPIOE,2U)
 #define HAL_GPIO_PIN_IMU2_CS              PAL_LINE(GPIOE,11U)
 #define HAL_GPIO_PIN_JTCK_SWCLK           PAL_LINE(GPIOA,14U)
 #define HAL_GPIO_PIN_JTMS_SWDIO           PAL_LINE(GPIOA,13U)
@@ -214,15 +222,16 @@
 #define HAL_GPIO_PIN_OTG_FS_DP            PAL_LINE(GPIOA,12U)
 #define HAL_GPIO_PIN_PINIO2               PAL_LINE(GPIOD,11U)
 #define HAL_GPIO_PIN_RSSI_ADC             PAL_LINE(GPIOC,3U)
-#define HAL_GPIO_PIN_SDCARD_CS            PAL_LINE(GPIOA,4U)
 #define HAL_GPIO_PIN_SDMMC1_CK            PAL_LINE(GPIOC,12U)
 #define HAL_GPIO_PIN_SDMMC1_CMD           PAL_LINE(GPIOD,2U)
 #define HAL_GPIO_PIN_SDMMC1_D0            PAL_LINE(GPIOC,8U)
 #define HAL_GPIO_PIN_SDMMC1_D1            PAL_LINE(GPIOC,9U)
 #define HAL_GPIO_PIN_SDMMC1_D2            PAL_LINE(GPIOC,10U)
 #define HAL_GPIO_PIN_SDMMC1_D3            PAL_LINE(GPIOC,11U)
+#define HAL_GPIO_PIN_SP1_CS1              PAL_LINE(GPIOD,4U)
+#define HAL_GPIO_PIN_SP1_CS2              PAL_LINE(GPIOD,7U)
 #define HAL_GPIO_PIN_SPI1_MISO            PAL_LINE(GPIOA,6U)
-#define HAL_GPIO_PIN_SPI1_MOSI            PAL_LINE(GPIOA,7U)
+#define HAL_GPIO_PIN_SPI1_MOSI            PAL_LINE(GPIOB,5U)
 #define HAL_GPIO_PIN_SPI1_SCK             PAL_LINE(GPIOA,5U)
 #define HAL_GPIO_PIN_SPI4_MISO            PAL_LINE(GPIOE,13U)
 #define HAL_GPIO_PIN_SPI4_MOSI            PAL_LINE(GPIOE,14U)
@@ -250,8 +259,9 @@
 #define HAL_INS_PROBE1  ADD_BACKEND(AP_InertialSensor_Invensensev3::probe(*this,hal.spi->get_device("icm42688"),ROTATION_YAW_180))
 #define HAL_INS_PROBE2  ADD_BACKEND(AP_InertialSensor_Invensensev3::probe(*this,hal.spi->get_device("icm42605"),ROTATION_YAW_270))
 #define HAL_INS_PROBE3  ADD_BACKEND(AP_InertialSensor_Invensense::probe(*this,hal.spi->get_device("icm20602"),ROTATION_ROLL_180_YAW_270))
-#define HAL_INS_PROBE4  ADD_BACKEND(AP_InertialSensor_Invensense::probe(*this,hal.spi->get_device("mpu6000"),ROTATION_ROLL_180_YAW_270))
-#define HAL_INS_PROBE_LIST HAL_INS_PROBE1;HAL_INS_PROBE2;HAL_INS_PROBE3;HAL_INS_PROBE4
+#define HAL_INS_PROBE4  ADD_BACKEND(AP_InertialSensor_BMI088::probe(*this,hal.spi->get_device("bmi088_a"),hal.spi->get_device("bmi088_g"),ROTATION_ROLL_180_YAW_270))
+#define HAL_INS_PROBE5  ADD_BACKEND(AP_InertialSensor_Invensense::probe(*this,hal.spi->get_device("mpu6000"),ROTATION_ROLL_180_YAW_270))
+#define HAL_INS_PROBE_LIST HAL_INS_PROBE1;HAL_INS_PROBE2;HAL_INS_PROBE3;HAL_INS_PROBE4;HAL_INS_PROBE5
 
 #define HAL_BARO_PROBE1  ADD_BACKEND(AP_Baro_MS56XX::probe(*this,GET_I2C_DEVICE(0,0x77)))
 #define HAL_BARO_PROBE2  ADD_BACKEND(AP_Baro_DPS310::probe(*this,GET_I2C_DEVICE(0,0x76)))
@@ -574,10 +584,8 @@
 /* PORTA:
  PA0 UART4_TX UART4 AF8
  PA3 TIM5_CH4 TIM5 AF2 PWM6
- PA4 SDCARD_CS CS
  PA5 SPI1_SCK SPI1 AF5
  PA6 SPI1_MISO SPI1 AF5
- PA7 SPI1_MOSI SPI1 AF5
  PA11 OTG_FS_DM OTG1 AF10
  PA12 OTG_FS_DP OTG1 AF10
  PA13 JTMS-SWDIO SWD AF0
@@ -588,10 +596,10 @@
                            PIN_MODE_INPUT(1U) | \
                            PIN_MODE_INPUT(2U) | \
                            PIN_MODE_ALTERNATE(3U) | \
-                           PIN_MODE_OUTPUT(4U) | \
+                           PIN_MODE_INPUT(4U) | \
                            PIN_MODE_ALTERNATE(5U) | \
                            PIN_MODE_ALTERNATE(6U) | \
-                           PIN_MODE_ALTERNATE(7U) | \
+                           PIN_MODE_INPUT(7U) | \
                            PIN_MODE_INPUT(8U) | \
                            PIN_MODE_INPUT(9U) | \
                            PIN_MODE_INPUT(10U) | \
@@ -639,7 +647,7 @@
                            PIN_PUPDR_FLOATING(1U) | \
                            PIN_PUPDR_FLOATING(2U) | \
                            PIN_PUPDR_FLOATING(3U) | \
-                           PIN_PUPDR_PULLUP(4U) | \
+                           PIN_PUPDR_FLOATING(4U) | \
                            PIN_PUPDR_FLOATING(5U) | \
                            PIN_PUPDR_FLOATING(6U) | \
                            PIN_PUPDR_FLOATING(7U) | \
@@ -676,7 +684,7 @@
                            PIN_AFIO_AF(4U, 0U) | \
                            PIN_AFIO_AF(5U, 5U) | \
                            PIN_AFIO_AF(6U, 5U) | \
-                           PIN_AFIO_AF(7U, 5U))
+                           PIN_AFIO_AF(7U, 0U))
 
 #define VAL_GPIOA_AFRH    (PIN_AFIO_AF(8U, 0U) | \
                            PIN_AFIO_AF(9U, 0U) | \
@@ -690,6 +698,7 @@
 /* PORTB:
  PB1 TIM8_CH3N TIM8 AF3 PWM2
  PB3 TIM2_CH2 TIM2 AF1
+ PB5 SPI1_MOSI SPI1 AF5
  PB6 I2C1_SCL I2C1 AF4
  PB7 I2C1_SDA I2C1 AF4
  PB8 UART4_RX UART4 AF8
@@ -702,7 +711,7 @@
                            PIN_MODE_INPUT(2U) | \
                            PIN_MODE_ALTERNATE(3U) | \
                            PIN_MODE_INPUT(4U) | \
-                           PIN_MODE_INPUT(5U) | \
+                           PIN_MODE_ALTERNATE(5U) | \
                            PIN_MODE_ALTERNATE(6U) | \
                            PIN_MODE_ALTERNATE(7U) | \
                            PIN_MODE_ALTERNATE(8U) | \
@@ -787,7 +796,7 @@
                            PIN_AFIO_AF(2U, 0U) | \
                            PIN_AFIO_AF(3U, 1U) | \
                            PIN_AFIO_AF(4U, 0U) | \
-                           PIN_AFIO_AF(5U, 0U) | \
+                           PIN_AFIO_AF(5U, 5U) | \
                            PIN_AFIO_AF(6U, 4U) | \
                            PIN_AFIO_AF(7U, 4U))
 
@@ -921,8 +930,10 @@
  PD1 CAN1_TX CAN1 AF9
  PD2 SDMMC1_CMD SDMMC1 AF12
  PD3 GPIO_CAN1_SILENT OUTPUT
+ PD4 SP1_CS1 CS
  PD5 USART2_TX USART2 AF7
  PD6 USART2_RX USART2 AF7
+ PD7 SP1_CS2 CS
  PD11 PINIO2 OUTPUT
  PD12 TIM4_CH1 TIM4 AF2 PWM7
  PD13 TIM4_CH2 TIM4 AF2 PWM8
@@ -934,10 +945,10 @@
                            PIN_MODE_ALTERNATE(1U) | \
                            PIN_MODE_ALTERNATE(2U) | \
                            PIN_MODE_OUTPUT(3U) | \
-                           PIN_MODE_INPUT(4U) | \
+                           PIN_MODE_OUTPUT(4U) | \
                            PIN_MODE_ALTERNATE(5U) | \
                            PIN_MODE_ALTERNATE(6U) | \
-                           PIN_MODE_INPUT(7U) | \
+                           PIN_MODE_OUTPUT(7U) | \
                            PIN_MODE_INPUT(8U) | \
                            PIN_MODE_INPUT(9U) | \
                            PIN_MODE_INPUT(10U) | \
@@ -985,10 +996,10 @@
                            PIN_PUPDR_FLOATING(1U) | \
                            PIN_PUPDR_PULLUP(2U) | \
                            PIN_PUPDR_FLOATING(3U) | \
-                           PIN_PUPDR_FLOATING(4U) | \
+                           PIN_PUPDR_PULLUP(4U) | \
                            PIN_PUPDR_PULLUP(5U) | \
                            PIN_PUPDR_PULLUP(6U) | \
-                           PIN_PUPDR_FLOATING(7U) | \
+                           PIN_PUPDR_PULLUP(7U) | \
                            PIN_PUPDR_FLOATING(8U) | \
                            PIN_PUPDR_FLOATING(9U) | \
                            PIN_PUPDR_FLOATING(10U) | \
@@ -1034,6 +1045,8 @@
                            PIN_AFIO_AF(15U, 2U))
 
 /* PORTE:
+ PE0 ICM42688_CS CS
+ PE2 ICM42688_DRDY INPUT
  PE3 LED0 OUTPUT
  PE4 LED1 OUTPUT
  PE5 TIM15_CH1 TIM15 AF4 PWM11
@@ -1046,9 +1059,10 @@
  PE12 SPI4_SCK SPI4 AF5
  PE13 SPI4_MISO SPI4 AF5
  PE14 SPI4_MOSI SPI4 AF5
+ PE15 BMI055_DRDY_A INPUT
 */
 
-#define VAL_GPIOE_MODER   (PIN_MODE_INPUT(0U) | \
+#define VAL_GPIOE_MODER   (PIN_MODE_OUTPUT(0U) | \
                            PIN_MODE_INPUT(1U) | \
                            PIN_MODE_INPUT(2U) | \
                            PIN_MODE_OUTPUT(3U) | \
@@ -1099,7 +1113,7 @@
                            PIN_OSPEED_MEDIUM(14U) | \
                            PIN_OSPEED_MEDIUM(15U))
 
-#define VAL_GPIOE_PUPDR   (PIN_PUPDR_FLOATING(0U) | \
+#define VAL_GPIOE_PUPDR   (PIN_PUPDR_PULLUP(0U) | \
                            PIN_PUPDR_FLOATING(1U) | \
                            PIN_PUPDR_FLOATING(2U) | \
                            PIN_PUPDR_FLOATING(3U) | \
@@ -1152,6 +1166,7 @@
                            PIN_AFIO_AF(15U, 0U))
 
 /* PORTF:
+ PF0 BMI055_DRDY_G INPUT
  PF13 BATT2_VOLTAGE_SENS ADC2 ADC2_IN2
  PF14 BATT2_CURRENT_SENS ADC2 ADC2_IN6
 */
