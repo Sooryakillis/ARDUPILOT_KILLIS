@@ -1,7 +1,7 @@
 libraries/AP_Mount/AP_Mount_SToRM32_serial.cpp.0.o: \
  ../../libraries/AP_Mount/AP_Mount_SToRM32_serial.cpp ap_config.h \
  ../../libraries/AP_Mount/AP_Mount_SToRM32_serial.h \
- ../../libraries/AP_Mount/AP_Mount_Backend.h \
+ ../../libraries/AP_Mount/AP_Mount_Backend_Serial.h \
  ../../libraries/AP_Mount/AP_Mount_config.h \
  ../../libraries/AP_HAL/AP_HAL_Boards.h \
  ../../libraries/AP_HAL/board/chibios.h hwdef.h \
@@ -23,11 +23,18 @@ libraries/AP_Mount/AP_Mount_SToRM32_serial.cpp.0.o: \
  ../../libraries/AP_HAL/AnalogIn.h ../../libraries/AP_HAL/GPIO.h \
  ../../libraries/AP_HAL/RCInput.h ../../libraries/AP_HAL/RCOutput.h \
  ../../libraries/AP_HAL/SPIDevice.h ../../libraries/AP_HAL/Device.h \
+ ../../libraries/AP_Common/missing/utility \
  ../../libraries/AP_HAL/utility/OwnPtr.h \
  ../../libraries/AP_Common/missing/cstddef \
  ../../libraries/AP_HAL/WSPIDevice.h ../../libraries/AP_HAL/Storage.h \
  ../../libraries/AP_HAL/UARTDriver.h \
  ../../libraries/AP_HAL/utility/BetterStream.h \
+ ../../libraries/AP_Logger/AP_Logger_config.h \
+ ../../libraries/GCS_MAVLink/GCS_config.h \
+ ../../libraries/AP_Relay/AP_Relay_config.h \
+ ../../libraries/AP_InertialSensor/AP_InertialSensor_config.h \
+ ../../libraries/AC_Fence/AC_Fence_config.h \
+ ../../libraries/AP_Rally/AP_Rally_config.h \
  ../../libraries/AP_HAL/system.h ../../libraries/AP_HAL/OpticalFlow.h \
  ../../libraries/AP_HAL/DSP.h ../../libraries/AP_HAL/utility/RingBuffer.h \
  ../../libraries/AP_HAL/CANIface.h ../../libraries/AP_HAL/Scheduler.h \
@@ -35,6 +42,8 @@ libraries/AP_Mount/AP_Mount_SToRM32_serial.cpp.0.o: \
  ../../libraries/StorageManager/StorageManager.h \
  ../../libraries/AP_BoardConfig/AP_BoardConfig_config.h \
  ../../libraries/AP_Scripting/AP_Scripting_config.h \
+ ../../libraries/AP_SerialManager/AP_SerialManager_config.h \
+ ../../libraries/AP_Networking/AP_Networking_Config.h \
  ../../libraries/AP_Param/AP_Param_config.h \
  ../../libraries/AP_Math/definitions.h ../../libraries/AP_Math/crc.h \
  ../../libraries/AP_Math/matrix3.h ../../libraries/AP_Math/ftype.h \
@@ -43,14 +52,6 @@ libraries/AP_Mount/AP_Mount_SToRM32_serial.cpp.0.o: \
  ../../libraries/AP_Math/quaternion.h ../../libraries/AP_Math/spline5.h \
  ../../libraries/AP_Math/location.h ../../libraries/AP_Math/control.h \
  ../../libraries/GCS_MAVLink/GCS_MAVLink.h \
- ../../libraries/AP_Networking/AP_Networking_Config.h \
- ../../libraries/AP_SerialManager/AP_SerialManager_config.h \
- ../../libraries/AP_InertialSensor/AP_InertialSensor_config.h \
- ../../libraries/AP_Logger/AP_Logger_config.h \
- ../../libraries/GCS_MAVLink/GCS_config.h \
- ../../libraries/AP_Relay/AP_Relay_config.h \
- ../../libraries/AC_Fence/AC_Fence_config.h \
- ../../libraries/AP_Rally/AP_Rally_config.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/version.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/mavlink_types.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/mavlink.h \
@@ -377,6 +378,7 @@ libraries/AP_Mount/AP_Mount_SToRM32_serial.cpp.0.o: \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../development/development.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../development/./mavlink_msg_mission_checksum.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../development/./mavlink_msg_airspeed.h \
+ libraries/GCS_MAVLink/include/mavlink/v2.0/all/../development/./mavlink_msg_radio_rc_channels.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../development/../standard/standard.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../python_array_test/python_array_test.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../python_array_test/./mavlink_msg_array_test_0.h \
@@ -410,6 +412,7 @@ libraries/AP_Mount/AP_Mount_SToRM32_serial.cpp.0.o: \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../AVSSUAS/./mavlink_msg_avss_drone_imu.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../AVSSUAS/./mavlink_msg_avss_drone_operation_mode.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../mavlink_get_info.h \
+ ../../libraries/AP_Mount/AP_Mount_Backend.h \
  ../../libraries/RC_Channel/RC_Channel.h \
  ../../libraries/RC_Channel/RC_Channel_config.h \
  ../../libraries/AP_Common/Bitmask.h \
@@ -418,5 +421,4 @@ libraries/AP_Mount/AP_Mount_SToRM32_serial.cpp.0.o: \
  ../../libraries/AP_Camera/AP_Camera_shareddefs.h \
  ../../libraries/AP_Mount/AP_Mount.h \
  ../../libraries/AP_Mount/AP_Mount_Params.h \
- libraries/GCS_MAVLink/include/mavlink/v2.0/checksum.h \
- ../../libraries/AP_SerialManager/AP_SerialManager.h
+ libraries/GCS_MAVLink/include/mavlink/v2.0/checksum.h

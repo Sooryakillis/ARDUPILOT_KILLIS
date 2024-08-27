@@ -44,24 +44,24 @@ void _uavcan_protocol_debug_LogMessage_encode(uint8_t* buffer, uint32_t* bit_ofs
     (void)tao;
 
     _uavcan_protocol_debug_LogLevel_encode(buffer, bit_ofs, &msg->level, false);
-    canardEncodeScalar(buffer, *bit_ofs, 5, &msg->source.len);
-    *bit_ofs += 5;
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wtype-limits"
-    const size_t source_len = msg->source.len > 31 ? 31 : msg->source.len;
+    const uint8_t source_len = msg->source.len > 31 ? 31 : msg->source.len;
 #pragma GCC diagnostic pop
+    canardEncodeScalar(buffer, *bit_ofs, 5, &source_len);
+    *bit_ofs += 5;
     for (size_t i=0; i < source_len; i++) {
         canardEncodeScalar(buffer, *bit_ofs, 8, &msg->source.data[i]);
         *bit_ofs += 8;
     }
-    if (!tao) {
-        canardEncodeScalar(buffer, *bit_ofs, 7, &msg->text.len);
-        *bit_ofs += 7;
-    }
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wtype-limits"
-    const size_t text_len = msg->text.len > 90 ? 90 : msg->text.len;
+    const uint8_t text_len = msg->text.len > 90 ? 90 : msg->text.len;
 #pragma GCC diagnostic pop
+    if (!tao) {
+        canardEncodeScalar(buffer, *bit_ofs, 7, &text_len);
+        *bit_ofs += 7;
+    }
     for (size_t i=0; i < text_len; i++) {
         canardEncodeScalar(buffer, *bit_ofs, 8, &msg->text.data[i]);
         *bit_ofs += 8;

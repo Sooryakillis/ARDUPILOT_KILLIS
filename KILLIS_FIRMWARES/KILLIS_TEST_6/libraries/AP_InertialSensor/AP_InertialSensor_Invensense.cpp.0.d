@@ -22,6 +22,14 @@ libraries/AP_InertialSensor/AP_InertialSensor_Invensense.cpp.0.o: \
  ../../libraries/AP_HAL/WSPIDevice.h ../../libraries/AP_HAL/Storage.h \
  ../../libraries/AP_HAL/UARTDriver.h \
  ../../libraries/AP_HAL/utility/BetterStream.h \
+ ../../libraries/AP_Logger/AP_Logger_config.h \
+ ../../libraries/AP_Filesystem/AP_Filesystem_config.h \
+ ../../libraries/AP_Mission/AP_Mission_config.h \
+ ../../libraries/GCS_MAVLink/GCS_config.h \
+ ../../libraries/AP_Relay/AP_Relay_config.h \
+ ../../libraries/AP_InertialSensor/AP_InertialSensor_config.h \
+ ../../libraries/AC_Fence/AC_Fence_config.h \
+ ../../libraries/AP_Rally/AP_Rally_config.h \
  ../../libraries/AP_HAL/system.h ../../libraries/AP_HAL/OpticalFlow.h \
  ../../libraries/AP_HAL/DSP.h ../../libraries/AP_HAL/utility/RingBuffer.h \
  ../../libraries/AP_HAL/CANIface.h ../../libraries/AP_HAL/Scheduler.h \
@@ -29,24 +37,16 @@ libraries/AP_InertialSensor/AP_InertialSensor_Invensense.cpp.0.o: \
  ../../libraries/AP_InternalError/AP_InternalError.h \
  ../../libraries/AP_InternalError/AP_InternalError_config.h \
  ../../libraries/AP_Logger/AP_Logger.h \
- ../../libraries/AP_Logger/AP_Logger_config.h \
- ../../libraries/AP_Filesystem/AP_Filesystem_config.h \
- ../../libraries/AP_Mission/AP_Mission_config.h \
- ../../libraries/GCS_MAVLink/GCS_config.h \
- ../../libraries/AP_Relay/AP_Relay_config.h \
- ../../libraries/AC_Fence/AC_Fence_config.h \
- ../../libraries/AP_Rally/AP_Rally_config.h \
  ../../libraries/AP_Param/AP_Param.h \
  ../../libraries/StorageManager/StorageManager.h \
  ../../libraries/AP_BoardConfig/AP_BoardConfig_config.h \
  ../../libraries/AP_Scripting/AP_Scripting_config.h \
+ ../../libraries/AP_SerialManager/AP_SerialManager_config.h \
+ ../../libraries/AP_Networking/AP_Networking_Config.h \
  ../../libraries/AP_Param/AP_Param_config.h \
  ../../libraries/AP_Mission/AP_Mission.h \
  ../../libraries/AP_Mission/AP_Mission_config.h \
  ../../libraries/GCS_MAVLink/GCS_MAVLink.h \
- ../../libraries/AP_Networking/AP_Networking_Config.h \
- ../../libraries/AP_SerialManager/AP_SerialManager_config.h \
- ../../libraries/AP_InertialSensor/AP_InertialSensor_config.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/version.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/mavlink_types.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/mavlink.h \
@@ -373,6 +373,7 @@ libraries/AP_InertialSensor/AP_InertialSensor_Invensense.cpp.0.o: \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../development/development.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../development/./mavlink_msg_mission_checksum.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../development/./mavlink_msg_airspeed.h \
+ libraries/GCS_MAVLink/include/mavlink/v2.0/all/../development/./mavlink_msg_radio_rc_channels.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../development/../standard/standard.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../python_array_test/python_array_test.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../python_array_test/./mavlink_msg_array_test_0.h \
@@ -435,7 +436,6 @@ libraries/AP_InertialSensor/AP_InertialSensor_Invensense.cpp.0.o: \
  ../../libraries/AP_AccelCal/AccelCalibrator.h \
  ../../libraries/AP_Math/vectorN.h ../../libraries/AP_Math/matrixN.h \
  ../../libraries/Filter/LowPassFilter.h \
- ../../libraries/Filter/FilterClass.h \
  ../../libraries/Filter/HarmonicNotchFilter.h \
  ../../libraries/Filter/NotchFilter.h \
  ../../libraries/AP_InertialSensor/AP_InertialSensor_Params.h \
@@ -477,12 +477,17 @@ libraries/AP_InertialSensor/AP_InertialSensor_Invensense.cpp.0.o: \
  ../../libraries/AP_Landing/AP_Landing_config.h \
  ../../libraries/AP_BoardConfig/AP_BoardConfig.h \
  ../../libraries/AP_RTC/AP_RTC.h ../../libraries/AP_RTC/AP_RTC_config.h \
- ../../libraries/AC_PID/AC_PI.h ../../libraries/AP_Vehicle/ModeReason.h \
+ ../../libraries/AC_PID/AC_PI.h \
+ ../../libraries/AP_Radio/AP_Radio_config.h \
+ ../../libraries/AC_AttitudeControl/LogStructure.h \
+ ../../libraries/AP_HAL/LogStructure.h \
+ ../../libraries/AP_Vehicle/ModeReason.h \
  ../../libraries/AP_Logger/LoggerMessageWriter.h \
  ../../libraries/AP_Logger/AP_Logger_Backend.h \
  ../../libraries/AP_Common/Bitmask.h ../../libraries/AP_Rally/AP_Rally.h \
  ../../libraries/AP_InertialSensor/AP_InertialSensor_Invensense.h \
  ../../libraries/AP_HAL/I2CDevice.h ../../libraries/Filter/Filter.h \
+ ../../libraries/Filter/FilterClass.h \
  ../../libraries/Filter/AverageFilter.h \
  ../../libraries/Filter/FilterWithBuffer.h \
  ../../libraries/Filter/DerivativeFilter.h \

@@ -102,12 +102,12 @@ void _uavcan_equipment_gnss_Fix2_encode(uint8_t* buffer, uint32_t* bit_ofs, stru
     *bit_ofs += 4;
     canardEncodeScalar(buffer, *bit_ofs, 6, &msg->sub_mode);
     *bit_ofs += 6;
-    canardEncodeScalar(buffer, *bit_ofs, 6, &msg->covariance.len);
-    *bit_ofs += 6;
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wtype-limits"
-    const size_t covariance_len = msg->covariance.len > 36 ? 36 : msg->covariance.len;
+    const uint8_t covariance_len = msg->covariance.len > 36 ? 36 : msg->covariance.len;
 #pragma GCC diagnostic pop
+    canardEncodeScalar(buffer, *bit_ofs, 6, &covariance_len);
+    *bit_ofs += 6;
     for (size_t i=0; i < covariance_len; i++) {
         {
             uint16_t float16_val = canardConvertNativeFloatToFloat16(msg->covariance.data[i]);
@@ -120,14 +120,14 @@ void _uavcan_equipment_gnss_Fix2_encode(uint8_t* buffer, uint32_t* bit_ofs, stru
         canardEncodeScalar(buffer, *bit_ofs, 16, &float16_val);
     }
     *bit_ofs += 16;
-    if (!tao) {
-        canardEncodeScalar(buffer, *bit_ofs, 1, &msg->ecef_position_velocity.len);
-        *bit_ofs += 1;
-    }
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wtype-limits"
-    const size_t ecef_position_velocity_len = msg->ecef_position_velocity.len > 1 ? 1 : msg->ecef_position_velocity.len;
+    const uint8_t ecef_position_velocity_len = msg->ecef_position_velocity.len > 1 ? 1 : msg->ecef_position_velocity.len;
 #pragma GCC diagnostic pop
+    if (!tao) {
+        canardEncodeScalar(buffer, *bit_ofs, 1, &ecef_position_velocity_len);
+        *bit_ofs += 1;
+    }
     for (size_t i=0; i < ecef_position_velocity_len; i++) {
         _uavcan_equipment_gnss_ECEFPositionVelocity_encode(buffer, bit_ofs, &msg->ecef_position_velocity.data[i], false);
     }
@@ -214,8 +214,10 @@ bool _uavcan_equipment_gnss_Fix2_decode(const CanardRxTransfer* transfer, uint32
 
     if (tao) {
         msg->ecef_position_velocity.len = 0;
-        while ((transfer->payload_len*8) > *bit_ofs) {
-            if (_uavcan_equipment_gnss_ECEFPositionVelocity_decode(transfer, bit_ofs, &msg->ecef_position_velocity.data[msg->ecef_position_velocity.len], false)) {return true;}
+        size_t max_len = 1;
+        uint32_t max_bits = (transfer->payload_len*8)-7; // TAO elements must be >= 8 bits
+        while (max_bits > *bit_ofs) {
+            if (!max_len-- || _uavcan_equipment_gnss_ECEFPositionVelocity_decode(transfer, bit_ofs, &msg->ecef_position_velocity.data[msg->ecef_position_velocity.len], false)) {return true;}
             msg->ecef_position_velocity.len++;
         }
     } else {

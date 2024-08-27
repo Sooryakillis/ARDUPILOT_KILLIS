@@ -35,14 +35,14 @@ void _uavcan_protocol_file_Path_encode(uint8_t* buffer, uint32_t* bit_ofs, struc
     (void)msg;
     (void)tao;
 
-    if (!tao) {
-        canardEncodeScalar(buffer, *bit_ofs, 8, &msg->path.len);
-        *bit_ofs += 8;
-    }
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wtype-limits"
-    const size_t path_len = msg->path.len > 200 ? 200 : msg->path.len;
+    const uint8_t path_len = msg->path.len > 200 ? 200 : msg->path.len;
 #pragma GCC diagnostic pop
+    if (!tao) {
+        canardEncodeScalar(buffer, *bit_ofs, 8, &path_len);
+        *bit_ofs += 8;
+    }
     for (size_t i=0; i < path_len; i++) {
         canardEncodeScalar(buffer, *bit_ofs, 8, &msg->path.data[i]);
         *bit_ofs += 8;

@@ -17,20 +17,29 @@ libraries/AP_Relay/AP_Relay.cpp.3.o: \
  ../../libraries/AP_HAL/HAL.h ../../libraries/AP_HAL/AnalogIn.h \
  ../../libraries/AP_HAL/GPIO.h ../../libraries/AP_HAL/RCInput.h \
  ../../libraries/AP_HAL/RCOutput.h ../../libraries/AP_HAL/SPIDevice.h \
- ../../libraries/AP_HAL/Device.h ../../libraries/AP_HAL/utility/OwnPtr.h \
+ ../../libraries/AP_HAL/Device.h \
+ ../../libraries/AP_Common/missing/utility \
+ ../../libraries/AP_HAL/utility/OwnPtr.h \
  ../../libraries/AP_Common/missing/cstddef \
  ../../libraries/AP_HAL/WSPIDevice.h ../../libraries/AP_HAL/Storage.h \
  ../../libraries/AP_HAL/UARTDriver.h \
  ../../libraries/AP_HAL/utility/BetterStream.h \
+ ../../libraries/AP_Logger/AP_Logger_config.h \
+ ../../libraries/AP_Filesystem/AP_Filesystem_config.h \
+ ../../libraries/AP_Mission/AP_Mission_config.h \
+ ../../libraries/GCS_MAVLink/GCS_config.h \
+ ../../libraries/AP_InertialSensor/AP_InertialSensor_config.h \
+ ../../libraries/AC_Fence/AC_Fence_config.h \
+ ../../libraries/AP_Rally/AP_Rally_config.h \
  ../../libraries/AP_HAL/system.h ../../libraries/AP_HAL/OpticalFlow.h \
  ../../libraries/AP_HAL/DSP.h ../../libraries/AP_HAL/utility/RingBuffer.h \
  ../../libraries/AP_HAL/CANIface.h ../../libraries/AP_HAL/Scheduler.h \
  ../../libraries/AP_HAL/Util.h ../../libraries/AP_HAL/Flash.h \
  ../../libraries/StorageManager/StorageManager.h \
  ../../libraries/AP_BoardConfig/AP_BoardConfig_config.h \
- ../../libraries/AP_Filesystem/AP_Filesystem_config.h \
- ../../libraries/AP_Mission/AP_Mission_config.h \
  ../../libraries/AP_Scripting/AP_Scripting_config.h \
+ ../../libraries/AP_SerialManager/AP_SerialManager_config.h \
+ ../../libraries/AP_Networking/AP_Networking_Config.h \
  ../../libraries/AP_Param/AP_Param_config.h \
  ../../libraries/AP_Relay/AP_Relay_Params.h \
  ../../libraries/AP_DroneCAN/AP_DroneCAN.h \
@@ -94,6 +103,11 @@ libraries/AP_Relay/AP_Relay.cpp.3.o: \
  modules/DroneCAN/libcanard/dsdlc_generated/include/com.hobbywing.esc.StatusMsg1.h \
  modules/DroneCAN/libcanard/dsdlc_generated/include/com.hobbywing.esc.StatusMsg2.h \
  modules/DroneCAN/libcanard/dsdlc_generated/include/com.hobbywing.esc.StatusMsg3.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/com.tmotor.esc.FocCtrl.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/com.tmotor.esc.PUSHCAN.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/com.tmotor.esc.PUSHSCI.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/com.tmotor.esc.ParamCfg.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/com.tmotor.esc.ParamGet.h \
  modules/DroneCAN/libcanard/dsdlc_generated/include/com.volz.servo.ActuatorStatus.h \
  modules/DroneCAN/libcanard/dsdlc_generated/include/com.xacti.CopterAttStatus.h \
  modules/DroneCAN/libcanard/dsdlc_generated/include/com.xacti.GimbalAttitudeStatus.h \
@@ -113,7 +127,9 @@ libraries/AP_Relay/AP_Relay.cpp.3.o: \
  modules/DroneCAN/libcanard/dsdlc_generated/include/dronecan.remoteid.SelfID.h \
  modules/DroneCAN/libcanard/dsdlc_generated/include/dronecan.remoteid.System.h \
  modules/DroneCAN/libcanard/dsdlc_generated/include/dronecan.sensors.hygrometer.Hygrometer.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/dronecan.sensors.magnetometer.MagneticFieldStrengthHiRes.h \
  modules/DroneCAN/libcanard/dsdlc_generated/include/dronecan.sensors.rc.RCInput.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/dronecan.sensors.rpm.RPM.h \
  modules/DroneCAN/libcanard/dsdlc_generated/include/mppt.OutputEnable.h \
  modules/DroneCAN/libcanard/dsdlc_generated/include/mppt.OutputEnable_req.h \
  modules/DroneCAN/libcanard/dsdlc_generated/include/mppt.OutputEnable_res.h \
@@ -141,6 +157,7 @@ libraries/AP_Relay/AP_Relay.cpp.3.o: \
  modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.equipment.esc.RPMCommand.h \
  modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.equipment.esc.RawCommand.h \
  modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.equipment.esc.Status.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.equipment.esc.StatusExtended.h \
  modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.equipment.gnss.Auxiliary.h \
  modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.equipment.gnss.ECEFPositionVelocity.h \
  modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.equipment.gnss.Fix.h \
@@ -240,14 +257,7 @@ libraries/AP_Relay/AP_Relay.cpp.3.o: \
  ../../libraries/AP_CANManager/AP_CANManager_config.h \
  ../../libraries/AP_CANManager/AP_SLCANIface.h \
  ../../libraries/AP_CANManager/AP_CANDriver.h \
- ../../libraries/GCS_MAVLink/GCS_config.h \
  ../../libraries/GCS_MAVLink/GCS_MAVLink.h \
- ../../libraries/AP_Networking/AP_Networking_Config.h \
- ../../libraries/AP_SerialManager/AP_SerialManager_config.h \
- ../../libraries/AP_InertialSensor/AP_InertialSensor_config.h \
- ../../libraries/AP_Logger/AP_Logger_config.h \
- ../../libraries/AC_Fence/AC_Fence_config.h \
- ../../libraries/AP_Rally/AP_Rally_config.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/version.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/mavlink_types.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/mavlink.h \
@@ -574,6 +584,7 @@ libraries/AP_Relay/AP_Relay.cpp.3.o: \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../development/development.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../development/./mavlink_msg_mission_checksum.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../development/./mavlink_msg_airspeed.h \
+ libraries/GCS_MAVLink/include/mavlink/v2.0/all/../development/./mavlink_msg_radio_rc_channels.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../development/../standard/standard.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../python_array_test/python_array_test.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../python_array_test/./mavlink_msg_array_test_0.h \
@@ -654,6 +665,7 @@ libraries/AP_Relay/AP_Relay.cpp.3.o: \
  ../../libraries/AP_Terrain/AP_Terrain.h \
  ../../libraries/AP_RangeFinder/AP_RangeFinder_config.h \
  ../../libraries/AP_Winch/AP_Winch_config.h \
+ ../../libraries/AP_AHRS/AP_AHRS_config.h \
  ../../libraries/AP_Arming/AP_Arming_config.h \
  ../../libraries/GCS_MAVLink/ap_message.h \
  ../../libraries/AP_Logger/AP_Logger.h \
@@ -662,7 +674,6 @@ libraries/AP_Relay/AP_Relay.cpp.3.o: \
  ../../libraries/AP_DAL/LogStructure.h \
  ../../libraries/AP_NavEKF2/LogStructure.h \
  ../../libraries/AP_AHRS/AP_AHRS.h \
- ../../libraries/AP_AHRS/AP_AHRS_config.h \
  ../../libraries/AP_AHRS/AP_AHRS_Backend.h \
  ../../libraries/AP_Airspeed/AP_Airspeed.h \
  ../../libraries/AP_Airspeed/AP_Airspeed_config.h \
@@ -671,7 +682,6 @@ libraries/AP_Relay/AP_Relay.cpp.3.o: \
  ../../libraries/AP_AccelCal/AccelCalibrator.h \
  ../../libraries/AP_Math/vectorN.h ../../libraries/AP_Math/matrixN.h \
  ../../libraries/Filter/LowPassFilter.h \
- ../../libraries/Filter/FilterClass.h \
  ../../libraries/Filter/HarmonicNotchFilter.h \
  ../../libraries/Filter/NotchFilter.h \
  ../../libraries/AP_InertialSensor/AP_InertialSensor_Params.h \
@@ -710,7 +720,11 @@ libraries/AP_Relay/AP_Relay.cpp.3.o: \
  ../../libraries/AP_Landing/AP_Landing_config.h \
  ../../libraries/AP_BoardConfig/AP_BoardConfig.h \
  ../../libraries/AP_RTC/AP_RTC.h ../../libraries/AP_RTC/AP_RTC_config.h \
- ../../libraries/AC_PID/AC_PI.h ../../libraries/AP_Vehicle/ModeReason.h \
+ ../../libraries/AC_PID/AC_PI.h \
+ ../../libraries/AP_Radio/AP_Radio_config.h \
+ ../../libraries/AC_AttitudeControl/LogStructure.h \
+ ../../libraries/AP_HAL/LogStructure.h \
+ ../../libraries/AP_Vehicle/ModeReason.h \
  ../../libraries/AP_Logger/LoggerMessageWriter.h \
  ../../libraries/AP_Logger/AP_Logger_Backend.h \
  ../../libraries/AP_Rally/AP_Rally.h \

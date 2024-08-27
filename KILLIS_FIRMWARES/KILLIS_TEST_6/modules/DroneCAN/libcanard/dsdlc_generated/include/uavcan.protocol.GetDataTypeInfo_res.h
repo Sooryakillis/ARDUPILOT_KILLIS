@@ -57,14 +57,14 @@ void _uavcan_protocol_GetDataTypeInfoResponse_encode(uint8_t* buffer, uint32_t* 
     _uavcan_protocol_DataTypeKind_encode(buffer, bit_ofs, &msg->kind, false);
     canardEncodeScalar(buffer, *bit_ofs, 8, &msg->flags);
     *bit_ofs += 8;
-    if (!tao) {
-        canardEncodeScalar(buffer, *bit_ofs, 7, &msg->name.len);
-        *bit_ofs += 7;
-    }
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wtype-limits"
-    const size_t name_len = msg->name.len > 80 ? 80 : msg->name.len;
+    const uint8_t name_len = msg->name.len > 80 ? 80 : msg->name.len;
 #pragma GCC diagnostic pop
+    if (!tao) {
+        canardEncodeScalar(buffer, *bit_ofs, 7, &name_len);
+        *bit_ofs += 7;
+    }
     for (size_t i=0; i < name_len; i++) {
         canardEncodeScalar(buffer, *bit_ofs, 8, &msg->name.data[i]);
         *bit_ofs += 8;

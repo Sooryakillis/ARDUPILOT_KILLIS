@@ -43,14 +43,14 @@ void _com_hobbywing_esc_SetAngleResponse_encode(uint8_t* buffer, uint32_t* bit_o
 
     canardEncodeScalar(buffer, *bit_ofs, 8, &msg->option);
     *bit_ofs += 8;
-    if (!tao) {
-        canardEncodeScalar(buffer, *bit_ofs, 2, &msg->angle.len);
-        *bit_ofs += 2;
-    }
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wtype-limits"
-    const size_t angle_len = msg->angle.len > 2 ? 2 : msg->angle.len;
+    const uint8_t angle_len = msg->angle.len > 2 ? 2 : msg->angle.len;
 #pragma GCC diagnostic pop
+    if (!tao) {
+        canardEncodeScalar(buffer, *bit_ofs, 2, &angle_len);
+        *bit_ofs += 2;
+    }
     for (size_t i=0; i < angle_len; i++) {
         canardEncodeScalar(buffer, *bit_ofs, 16, &msg->angle.data[i]);
         *bit_ofs += 16;

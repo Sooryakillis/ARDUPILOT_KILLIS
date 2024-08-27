@@ -46,14 +46,14 @@ void _uavcan_tunnel_CallRequest_encode(uint8_t* buffer, uint32_t* bit_ofs, struc
     _uavcan_tunnel_Protocol_encode(buffer, bit_ofs, &msg->protocol, false);
     canardEncodeScalar(buffer, *bit_ofs, 8, &msg->channel_id);
     *bit_ofs += 8;
-    if (!tao) {
-        canardEncodeScalar(buffer, *bit_ofs, 6, &msg->buffer.len);
-        *bit_ofs += 6;
-    }
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wtype-limits"
-    const size_t buffer_len = msg->buffer.len > 60 ? 60 : msg->buffer.len;
+    const uint8_t buffer_len = msg->buffer.len > 60 ? 60 : msg->buffer.len;
 #pragma GCC diagnostic pop
+    if (!tao) {
+        canardEncodeScalar(buffer, *bit_ofs, 6, &buffer_len);
+        *bit_ofs += 6;
+    }
     for (size_t i=0; i < buffer_len; i++) {
         canardEncodeScalar(buffer, *bit_ofs, 8, &msg->buffer.data[i]);
         *bit_ofs += 8;

@@ -14,7 +14,11 @@ libraries/GCS_MAVLink/MissionItemProtocol_Fence.cpp.0.o: \
  ../../libraries/AP_HAL_ChibiOS/AP_HAL_ChibiOS_Namespace.h \
  ../../libraries/AP_Relay/AP_Relay_config.h \
  ../../libraries/AP_Mission/AP_Mission_config.h \
+ ../../libraries/AP_InertialSensor/AP_InertialSensor_config.h \
+ ../../libraries/AP_Logger/AP_Logger_config.h \
+ ../../libraries/AP_Filesystem/AP_Filesystem_config.h \
  ../../libraries/AC_Fence/AC_Fence_config.h \
+ ../../libraries/AP_Rally/AP_Rally_config.h \
  ../../libraries/GCS_MAVLink/MissionItemProtocol_Fence.h \
  ../../libraries/GCS_MAVLink/MissionItemProtocol.h \
  ../../libraries/GCS_MAVLink/GCS_MAVLink.h \
@@ -24,7 +28,9 @@ libraries/GCS_MAVLink/MissionItemProtocol_Fence.cpp.0.o: \
  ../../libraries/AP_HAL/HAL.h ../../libraries/AP_HAL/AnalogIn.h \
  ../../libraries/AP_HAL/GPIO.h ../../libraries/AP_HAL/RCInput.h \
  ../../libraries/AP_HAL/RCOutput.h ../../libraries/AP_HAL/SPIDevice.h \
- ../../libraries/AP_HAL/Device.h ../../libraries/AP_HAL/utility/OwnPtr.h \
+ ../../libraries/AP_HAL/Device.h \
+ ../../libraries/AP_Common/missing/utility \
+ ../../libraries/AP_HAL/utility/OwnPtr.h \
  ../../libraries/AP_Common/missing/cstddef \
  ../../libraries/AP_HAL/WSPIDevice.h ../../libraries/AP_HAL/Storage.h \
  ../../libraries/AP_HAL/UARTDriver.h \
@@ -33,10 +39,6 @@ libraries/GCS_MAVLink/MissionItemProtocol_Fence.cpp.0.o: \
  ../../libraries/AP_HAL/DSP.h ../../libraries/AP_HAL/utility/RingBuffer.h \
  ../../libraries/AP_HAL/CANIface.h ../../libraries/AP_HAL/Scheduler.h \
  ../../libraries/AP_HAL/Util.h ../../libraries/AP_HAL/Flash.h \
- ../../libraries/AP_InertialSensor/AP_InertialSensor_config.h \
- ../../libraries/AP_Logger/AP_Logger_config.h \
- ../../libraries/AP_Filesystem/AP_Filesystem_config.h \
- ../../libraries/AP_Rally/AP_Rally_config.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/version.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/mavlink_types.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/mavlink.h \
@@ -363,6 +365,7 @@ libraries/GCS_MAVLink/MissionItemProtocol_Fence.cpp.0.o: \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../development/development.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../development/./mavlink_msg_mission_checksum.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../development/./mavlink_msg_airspeed.h \
+ libraries/GCS_MAVLink/include/mavlink/v2.0/all/../development/./mavlink_msg_radio_rc_channels.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../development/../standard/standard.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../python_array_test/python_array_test.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../python_array_test/./mavlink_msg_array_test_0.h \
@@ -397,7 +400,11 @@ libraries/GCS_MAVLink/MissionItemProtocol_Fence.cpp.0.o: \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../AVSSUAS/./mavlink_msg_avss_drone_operation_mode.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../mavlink_get_info.h \
  ../../libraries/GCS_MAVLink/ap_message.h \
- ../../libraries/AC_Fence/AC_Fence.h ../../libraries/AP_Param/AP_Param.h \
+ ../../libraries/AP_AHRS/AP_AHRS_config.h \
+ ../../libraries/AP_ExternalAHRS/AP_ExternalAHRS_config.h \
+ ../../libraries/AC_Fence/AC_Fence.h \
+ ../../libraries/AP_Common/ExpandingString.h \
+ ../../libraries/AP_Param/AP_Param.h \
  ../../libraries/StorageManager/StorageManager.h \
  ../../libraries/AP_BoardConfig/AP_BoardConfig_config.h \
  ../../libraries/AP_Scripting/AP_Scripting_config.h \
@@ -431,7 +438,6 @@ libraries/GCS_MAVLink/MissionItemProtocol_Fence.cpp.0.o: \
  ../../libraries/AP_MSP/msp_version.h \
  ../../libraries/AP_MSP/msp_sensors.h \
  ../../libraries/AP_ExternalAHRS/AP_ExternalAHRS.h \
- ../../libraries/AP_ExternalAHRS/AP_ExternalAHRS_config.h \
  ../../libraries/AP_NavEKF/AP_Nav_Common.h ../../libraries/SITL/SIM_GPS.h \
  ../../libraries/SITL/SIM_config.h ../../libraries/AP_GPS/MovingBase.h \
  ../../libraries/AP_Mount/AP_Mount_config.h \

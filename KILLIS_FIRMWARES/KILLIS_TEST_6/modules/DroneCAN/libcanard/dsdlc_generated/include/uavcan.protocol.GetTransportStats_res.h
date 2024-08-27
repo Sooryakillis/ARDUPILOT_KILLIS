@@ -50,14 +50,14 @@ void _uavcan_protocol_GetTransportStatsResponse_encode(uint8_t* buffer, uint32_t
     *bit_ofs += 48;
     canardEncodeScalar(buffer, *bit_ofs, 48, &msg->transfer_errors);
     *bit_ofs += 48;
-    if (!tao) {
-        canardEncodeScalar(buffer, *bit_ofs, 2, &msg->can_iface_stats.len);
-        *bit_ofs += 2;
-    }
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wtype-limits"
-    const size_t can_iface_stats_len = msg->can_iface_stats.len > 3 ? 3 : msg->can_iface_stats.len;
+    const uint8_t can_iface_stats_len = msg->can_iface_stats.len > 3 ? 3 : msg->can_iface_stats.len;
 #pragma GCC diagnostic pop
+    if (!tao) {
+        canardEncodeScalar(buffer, *bit_ofs, 2, &can_iface_stats_len);
+        *bit_ofs += 2;
+    }
     for (size_t i=0; i < can_iface_stats_len; i++) {
         _uavcan_protocol_CANIfaceStats_encode(buffer, bit_ofs, &msg->can_iface_stats.data[i], false);
     }
@@ -88,8 +88,10 @@ bool _uavcan_protocol_GetTransportStatsResponse_decode(const CanardRxTransfer* t
 
     if (tao) {
         msg->can_iface_stats.len = 0;
-        while ((transfer->payload_len*8) > *bit_ofs) {
-            if (_uavcan_protocol_CANIfaceStats_decode(transfer, bit_ofs, &msg->can_iface_stats.data[msg->can_iface_stats.len], false)) {return true;}
+        size_t max_len = 3;
+        uint32_t max_bits = (transfer->payload_len*8)-7; // TAO elements must be >= 8 bits
+        while (max_bits > *bit_ofs) {
+            if (!max_len-- || _uavcan_protocol_CANIfaceStats_decode(transfer, bit_ofs, &msg->can_iface_stats.data[msg->can_iface_stats.len], false)) {return true;}
             msg->can_iface_stats.len++;
         }
     } else {

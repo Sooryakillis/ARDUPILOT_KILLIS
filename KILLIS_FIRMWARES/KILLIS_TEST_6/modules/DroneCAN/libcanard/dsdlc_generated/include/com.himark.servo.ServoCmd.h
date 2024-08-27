@@ -40,14 +40,14 @@ void _com_himark_servo_ServoCmd_encode(uint8_t* buffer, uint32_t* bit_ofs, struc
     (void)msg;
     (void)tao;
 
-    if (!tao) {
-        canardEncodeScalar(buffer, *bit_ofs, 5, &msg->cmd.len);
-        *bit_ofs += 5;
-    }
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wtype-limits"
-    const size_t cmd_len = msg->cmd.len > 17 ? 17 : msg->cmd.len;
+    const uint8_t cmd_len = msg->cmd.len > 17 ? 17 : msg->cmd.len;
 #pragma GCC diagnostic pop
+    if (!tao) {
+        canardEncodeScalar(buffer, *bit_ofs, 5, &cmd_len);
+        *bit_ofs += 5;
+    }
     for (size_t i=0; i < cmd_len; i++) {
         canardEncodeScalar(buffer, *bit_ofs, 10, &msg->cmd.data[i]);
         *bit_ofs += 10;

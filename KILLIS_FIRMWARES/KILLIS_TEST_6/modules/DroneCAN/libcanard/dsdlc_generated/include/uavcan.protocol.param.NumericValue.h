@@ -77,8 +77,14 @@ bool _uavcan_protocol_param_NumericValue_decode(const CanardRxTransfer* transfer
     (void)tao;
     uint8_t union_tag;
     canardDecodeScalar(transfer, *bit_ofs, 2, false, &union_tag);
-    msg->union_tag = (enum uavcan_protocol_param_NumericValue_type_t)union_tag;
     *bit_ofs += 2;
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wtype-limits"
+    if (union_tag >= 3) {
+        return true; /* invalid value */
+    }
+#pragma GCC diagnostic pop
+    msg->union_tag = (enum uavcan_protocol_param_NumericValue_type_t)union_tag;
 
     switch(msg->union_tag) {
         case UAVCAN_PROTOCOL_PARAM_NUMERICVALUE_EMPTY: {

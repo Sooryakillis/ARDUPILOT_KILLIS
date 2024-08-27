@@ -43,14 +43,14 @@ void _uavcan_protocol_debug_KeyValue_encode(uint8_t* buffer, uint32_t* bit_ofs, 
 
     canardEncodeScalar(buffer, *bit_ofs, 32, &msg->value);
     *bit_ofs += 32;
-    if (!tao) {
-        canardEncodeScalar(buffer, *bit_ofs, 6, &msg->key.len);
-        *bit_ofs += 6;
-    }
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wtype-limits"
-    const size_t key_len = msg->key.len > 58 ? 58 : msg->key.len;
+    const uint8_t key_len = msg->key.len > 58 ? 58 : msg->key.len;
 #pragma GCC diagnostic pop
+    if (!tao) {
+        canardEncodeScalar(buffer, *bit_ofs, 6, &key_len);
+        *bit_ofs += 6;
+    }
     for (size_t i=0; i < key_len; i++) {
         canardEncodeScalar(buffer, *bit_ofs, 8, &msg->key.data[i]);
         *bit_ofs += 8;

@@ -49,12 +49,12 @@ void _ardupilot_equipment_power_BatteryInfoAux_encode(uint8_t* buffer, uint32_t*
     (void)tao;
 
     _uavcan_Timestamp_encode(buffer, bit_ofs, &msg->timestamp, false);
-    canardEncodeScalar(buffer, *bit_ofs, 8, &msg->voltage_cell.len);
-    *bit_ofs += 8;
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wtype-limits"
-    const size_t voltage_cell_len = msg->voltage_cell.len > 255 ? 255 : msg->voltage_cell.len;
+    const uint8_t voltage_cell_len = msg->voltage_cell.len > 255 ? 255 : msg->voltage_cell.len;
 #pragma GCC diagnostic pop
+    canardEncodeScalar(buffer, *bit_ofs, 8, &voltage_cell_len);
+    *bit_ofs += 8;
     for (size_t i=0; i < voltage_cell_len; i++) {
         {
             uint16_t float16_val = canardConvertNativeFloatToFloat16(msg->voltage_cell.data[i]);

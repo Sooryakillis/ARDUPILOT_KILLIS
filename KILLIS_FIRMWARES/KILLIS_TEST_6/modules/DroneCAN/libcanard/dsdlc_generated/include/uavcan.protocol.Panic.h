@@ -43,14 +43,14 @@ void _uavcan_protocol_Panic_encode(uint8_t* buffer, uint32_t* bit_ofs, struct ua
     (void)msg;
     (void)tao;
 
-    if (!tao) {
-        canardEncodeScalar(buffer, *bit_ofs, 3, &msg->reason_text.len);
-        *bit_ofs += 3;
-    }
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wtype-limits"
-    const size_t reason_text_len = msg->reason_text.len > 7 ? 7 : msg->reason_text.len;
+    const uint8_t reason_text_len = msg->reason_text.len > 7 ? 7 : msg->reason_text.len;
 #pragma GCC diagnostic pop
+    if (!tao) {
+        canardEncodeScalar(buffer, *bit_ofs, 3, &reason_text_len);
+        *bit_ofs += 3;
+    }
     for (size_t i=0; i < reason_text_len; i++) {
         canardEncodeScalar(buffer, *bit_ofs, 8, &msg->reason_text.data[i]);
         *bit_ofs += 8;

@@ -113,14 +113,14 @@ void _uavcan_equipment_power_BatteryInfo_encode(uint8_t* buffer, uint32_t* bit_o
     *bit_ofs += 8;
     canardEncodeScalar(buffer, *bit_ofs, 32, &msg->model_instance_id);
     *bit_ofs += 32;
-    if (!tao) {
-        canardEncodeScalar(buffer, *bit_ofs, 5, &msg->model_name.len);
-        *bit_ofs += 5;
-    }
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wtype-limits"
-    const size_t model_name_len = msg->model_name.len > 31 ? 31 : msg->model_name.len;
+    const uint8_t model_name_len = msg->model_name.len > 31 ? 31 : msg->model_name.len;
 #pragma GCC diagnostic pop
+    if (!tao) {
+        canardEncodeScalar(buffer, *bit_ofs, 5, &model_name_len);
+        *bit_ofs += 5;
+    }
     for (size_t i=0; i < model_name_len; i++) {
         canardEncodeScalar(buffer, *bit_ofs, 8, &msg->model_name.data[i]);
         *bit_ofs += 8;

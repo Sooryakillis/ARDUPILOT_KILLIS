@@ -54,14 +54,14 @@ void _uavcan_equipment_camera_gimbal_Status_encode(uint8_t* buffer, uint32_t* bi
         }
         *bit_ofs += 16;
     }
-    if (!tao) {
-        canardEncodeScalar(buffer, *bit_ofs, 4, &msg->camera_orientation_in_body_frame_covariance.len);
-        *bit_ofs += 4;
-    }
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wtype-limits"
-    const size_t camera_orientation_in_body_frame_covariance_len = msg->camera_orientation_in_body_frame_covariance.len > 9 ? 9 : msg->camera_orientation_in_body_frame_covariance.len;
+    const uint8_t camera_orientation_in_body_frame_covariance_len = msg->camera_orientation_in_body_frame_covariance.len > 9 ? 9 : msg->camera_orientation_in_body_frame_covariance.len;
 #pragma GCC diagnostic pop
+    if (!tao) {
+        canardEncodeScalar(buffer, *bit_ofs, 4, &camera_orientation_in_body_frame_covariance_len);
+        *bit_ofs += 4;
+    }
     for (size_t i=0; i < camera_orientation_in_body_frame_covariance_len; i++) {
         {
             uint16_t float16_val = canardConvertNativeFloatToFloat16(msg->camera_orientation_in_body_frame_covariance.data[i]);

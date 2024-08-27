@@ -54,32 +54,32 @@ void _ardupilot_equipment_power_BatteryPeriodic_encode(uint8_t* buffer, uint32_t
     (void)msg;
     (void)tao;
 
-    canardEncodeScalar(buffer, *bit_ofs, 6, &msg->name.len);
-    *bit_ofs += 6;
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wtype-limits"
-    const size_t name_len = msg->name.len > 50 ? 50 : msg->name.len;
+    const uint8_t name_len = msg->name.len > 50 ? 50 : msg->name.len;
 #pragma GCC diagnostic pop
+    canardEncodeScalar(buffer, *bit_ofs, 6, &name_len);
+    *bit_ofs += 6;
     for (size_t i=0; i < name_len; i++) {
         canardEncodeScalar(buffer, *bit_ofs, 8, &msg->name.data[i]);
         *bit_ofs += 8;
     }
-    canardEncodeScalar(buffer, *bit_ofs, 6, &msg->serial_number.len);
-    *bit_ofs += 6;
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wtype-limits"
-    const size_t serial_number_len = msg->serial_number.len > 32 ? 32 : msg->serial_number.len;
+    const uint8_t serial_number_len = msg->serial_number.len > 32 ? 32 : msg->serial_number.len;
 #pragma GCC diagnostic pop
+    canardEncodeScalar(buffer, *bit_ofs, 6, &serial_number_len);
+    *bit_ofs += 6;
     for (size_t i=0; i < serial_number_len; i++) {
         canardEncodeScalar(buffer, *bit_ofs, 8, &msg->serial_number.data[i]);
         *bit_ofs += 8;
     }
-    canardEncodeScalar(buffer, *bit_ofs, 4, &msg->manufacture_date.len);
-    *bit_ofs += 4;
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wtype-limits"
-    const size_t manufacture_date_len = msg->manufacture_date.len > 9 ? 9 : msg->manufacture_date.len;
+    const uint8_t manufacture_date_len = msg->manufacture_date.len > 9 ? 9 : msg->manufacture_date.len;
 #pragma GCC diagnostic pop
+    canardEncodeScalar(buffer, *bit_ofs, 4, &manufacture_date_len);
+    *bit_ofs += 4;
     for (size_t i=0; i < manufacture_date_len; i++) {
         canardEncodeScalar(buffer, *bit_ofs, 8, &msg->manufacture_date.data[i]);
         *bit_ofs += 8;

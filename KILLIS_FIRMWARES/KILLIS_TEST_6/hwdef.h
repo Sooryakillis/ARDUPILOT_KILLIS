@@ -53,19 +53,14 @@
 #define HAL_PROCESS_STACK_SIZE 0x1C00
 #define STM32_ST_USE_TIMER 12
 #define CH_CFG_ST_RESOLUTION 16
-#define HAL_BATT_MONITOR_DEFAULT 4
-#define HAL_BATT_VOLT_PIN 10
-#define HAL_BATT_CURR_PIN 11
-#define HAL_BATT2_VOLT_PIN 18
-#define HAL_BATT2_CURR_PIN 7
-#define HAL_BATT_VOLT_SCALE 11.0
-#define HAL_BATT_CURR_SCALE 40.0
-#define HAL_BATT2_VOLT_SCALE 11.0
+#define HAL_BATT_VOLT_PIN 8
+#define HAL_BATT_CURR_PIN 4
+#define HAL_BATT_VOLT_SCALE 18.18
+#define HAL_BATT_CURR_SCALE 36.36
 #define HAL_DEFAULT_AIRSPEED_PIN 4
 #define BOARD_RSSI_ANA_PIN 8
 #define HAL_GPIO_A_LED_PIN 91
 #define HAL_GPIO_B_LED_PIN 90
-#define HAL_GPIO_LED_OFF 1
 #define FATFS_HAL_DEVICE SDCD1
 #define HAL_STORAGE_SIZE 32768
 #define ALLOW_ARM_NO_COMPASS
@@ -146,23 +141,15 @@
 #define HAL_WITH_SPI_ICM20602 1
 
 // ADC config
+#define ANALOG_VCC_5V_PIN 18
+#define HAL_HAVE_BOARD_VOLTAGE 1
 #define HAL_ANALOG_PINS \
-{ 10, 10,    3.30/4096 }, /* PC0 BATT_VOLTAGE_SENS */ \
-{ 12, 12,    3.30/4096 }, /* PC2 BATT_CURRENT_SENS */ \
+{  2,  2,    3.30/4096 }, /* PF11 BATT2_VOLTAGE_SENS */ \
+{  4,  4,    3.30/4096 }, /* PC4 BATT_CURRENT_SENS */ \
+{  6,  6,    3.30/4096 }, /* PF12 BATT2_CURRENT_SENS */ \
+{  8,  8,    3.30/4096 }, /* PC5 BATT_VOLTAGE_SENS */ \
 { 13, 13,    3.30/4096 }, /* PC3 RSSI_ADC */ \
-{  2, 255,    3.30/4096 }, /* dummy dummy */ \
-{  6, 255,    3.30/4096 }, /* dummy dummy */ \
-
-
-#define STM32_ADC_SAMPLES_SIZE 32
-#define ADC12_CCR_DUAL ADC_CCR_DUAL_REG_INTERL
-#define STM32_ADC_DUAL_MODE TRUE
-#define HAL_ANALOG2_PINS \
-{  2,  2,    3.30/4096 }, /* PF13 BATT2_VOLTAGE_SENS */ \
-{  6,  6,    3.30/4096 }, /* PF14 BATT2_CURRENT_SENS */ \
-{ 10, 255,    3.30/4096 }, /* dummy dummy */ \
-{ 12, 255,    3.30/4096 }, /* dummy dummy */ \
-{ 13, 255,    3.30/4096 }, /* dummy dummy */ \
+{ 18, 18,  2*3.30/4096 }, /* PA4 VDD_5V_SENS */ \
 
 
 // GPIO config
@@ -196,10 +183,10 @@
 }
 
 // full pin define list
-#define HAL_GPIO_PIN_BATT2_CURRENT_SENS   PAL_LINE(GPIOF,14U)
-#define HAL_GPIO_PIN_BATT2_VOLTAGE_SENS   PAL_LINE(GPIOF,13U)
-#define HAL_GPIO_PIN_BATT_CURRENT_SENS    PAL_LINE(GPIOC,2U)
-#define HAL_GPIO_PIN_BATT_VOLTAGE_SENS    PAL_LINE(GPIOC,0U)
+#define HAL_GPIO_PIN_BATT2_CURRENT_SENS   PAL_LINE(GPIOF,12U)
+#define HAL_GPIO_PIN_BATT2_VOLTAGE_SENS   PAL_LINE(GPIOF,11U)
+#define HAL_GPIO_PIN_BATT_CURRENT_SENS    PAL_LINE(GPIOC,4U)
+#define HAL_GPIO_PIN_BATT_VOLTAGE_SENS    PAL_LINE(GPIOC,5U)
 #define HAL_GPIO_PIN_BMI055_DRDY_A        PAL_LINE(GPIOE,15U)
 #define HAL_GPIO_PIN_BMI055_DRDY_G        PAL_LINE(GPIOF,0U)
 #define HAL_GPIO_PIN_CAN1_RX              PAL_LINE(GPIOD,0U)
@@ -255,11 +242,12 @@
 #define HAL_GPIO_PIN_USART2_RX            PAL_LINE(GPIOD,6U)
 #define HAL_GPIO_PIN_USART2_TX            PAL_LINE(GPIOD,5U)
 #define HAL_GPIO_PIN_USART6_TX            PAL_LINE(GPIOC,6U)
+#define HAL_GPIO_PIN_VDD_5V_SENS          PAL_LINE(GPIOA,4U)
 
-#define HAL_INS_PROBE1  ADD_BACKEND(AP_InertialSensor_Invensensev3::probe(*this,hal.spi->get_device("icm42688"),ROTATION_YAW_180))
-#define HAL_INS_PROBE2  ADD_BACKEND(AP_InertialSensor_Invensensev3::probe(*this,hal.spi->get_device("icm42605"),ROTATION_YAW_270))
+#define HAL_INS_PROBE1  ADD_BACKEND(AP_InertialSensor_BMI088::probe(*this,hal.spi->get_device("bmi088_a"),hal.spi->get_device("bmi088_g"),ROTATION_ROLL_180_YAW_270))
+#define HAL_INS_PROBE2  ADD_BACKEND(AP_InertialSensor_Invensensev3::probe(*this,hal.spi->get_device("icm42688"),ROTATION_YAW_180))
 #define HAL_INS_PROBE3  ADD_BACKEND(AP_InertialSensor_Invensense::probe(*this,hal.spi->get_device("icm20602"),ROTATION_ROLL_180_YAW_270))
-#define HAL_INS_PROBE4  ADD_BACKEND(AP_InertialSensor_BMI088::probe(*this,hal.spi->get_device("bmi088_a"),hal.spi->get_device("bmi088_g"),ROTATION_ROLL_180_YAW_270))
+#define HAL_INS_PROBE4  ADD_BACKEND(AP_InertialSensor_Invensensev3::probe(*this,hal.spi->get_device("icm42605"),ROTATION_YAW_270))
 #define HAL_INS_PROBE5  ADD_BACKEND(AP_InertialSensor_Invensense::probe(*this,hal.spi->get_device("mpu6000"),ROTATION_ROLL_180_YAW_270))
 #define HAL_INS_PROBE_LIST HAL_INS_PROBE1;HAL_INS_PROBE2;HAL_INS_PROBE3;HAL_INS_PROBE4;HAL_INS_PROBE5
 
@@ -294,35 +282,33 @@
 // auto-generated DMA mapping from dma_resolver.py
 #define STM32_ADC_ADC1_DMA_STREAM      STM32_DMA_STREAM_ID(1, 1)
 #define STM32_ADC_ADC1_DMA_CHAN        STM32_DMAMUX1_ADC1
-#define STM32_ADC_ADC2_DMA_STREAM      STM32_DMA_STREAM_ID(1, 2)
-#define STM32_ADC_ADC2_DMA_CHAN        STM32_DMAMUX1_ADC2
-#define STM32_SPI_SPI1_RX_DMA_STREAM   STM32_DMA_STREAM_ID(1, 3)
+#define STM32_SPI_SPI1_RX_DMA_STREAM   STM32_DMA_STREAM_ID(1, 2)
 #define STM32_SPI_SPI1_RX_DMA_CHAN     STM32_DMAMUX1_SPI1_RX
-#define STM32_SPI_SPI1_TX_DMA_STREAM   STM32_DMA_STREAM_ID(1, 4)
+#define STM32_SPI_SPI1_TX_DMA_STREAM   STM32_DMA_STREAM_ID(1, 3)
 #define STM32_SPI_SPI1_TX_DMA_CHAN     STM32_DMAMUX1_SPI1_TX
-#define STM32_SPI_SPI4_RX_DMA_STREAM   STM32_DMA_STREAM_ID(1, 5)
+#define STM32_SPI_SPI4_RX_DMA_STREAM   STM32_DMA_STREAM_ID(1, 4)
 #define STM32_SPI_SPI4_RX_DMA_CHAN     STM32_DMAMUX1_SPI4_RX
-#define STM32_SPI_SPI4_TX_DMA_STREAM   STM32_DMA_STREAM_ID(1, 6)
+#define STM32_SPI_SPI4_TX_DMA_STREAM   STM32_DMA_STREAM_ID(1, 5)
 #define STM32_SPI_SPI4_TX_DMA_CHAN     STM32_DMAMUX1_SPI4_TX
-#define STM32_TIM_TIM15_UP_DMA_STREAM  STM32_DMA_STREAM_ID(2, 6)
+#define STM32_TIM_TIM15_UP_DMA_STREAM  STM32_DMA_STREAM_ID(2, 5)
 #define STM32_TIM_TIM15_UP_DMA_CHAN    STM32_DMAMUX1_TIM15_UP
-#define STM32_TIM_TIM4_UP_DMA_STREAM   STM32_DMA_STREAM_ID(2, 5)
+#define STM32_TIM_TIM4_UP_DMA_STREAM   STM32_DMA_STREAM_ID(2, 4)
 #define STM32_TIM_TIM4_UP_DMA_CHAN     STM32_DMAMUX1_TIM4_UP
-#define STM32_TIM_TIM5_UP_DMA_STREAM   STM32_DMA_STREAM_ID(2, 4)
+#define STM32_TIM_TIM5_UP_DMA_STREAM   STM32_DMA_STREAM_ID(2, 3)
 #define STM32_TIM_TIM5_UP_DMA_CHAN     STM32_DMAMUX1_TIM5_UP
-#define STM32_TIM_TIM8_UP_DMA_STREAM   STM32_DMA_STREAM_ID(2, 7)
+#define STM32_TIM_TIM8_UP_DMA_STREAM   STM32_DMA_STREAM_ID(2, 6)
 #define STM32_TIM_TIM8_UP_DMA_CHAN     STM32_DMAMUX1_TIM8_UP
-#define STM32_UART_UART4_RX_DMA_STREAM STM32_DMA_STREAM_ID(1, 7)
+#define STM32_UART_UART4_RX_DMA_STREAM STM32_DMA_STREAM_ID(1, 6)
 #define STM32_UART_UART4_RX_DMA_CHAN   STM32_DMAMUX1_UART4_RX
-#define STM32_UART_UART4_TX_DMA_STREAM STM32_DMA_STREAM_ID(2, 2)
+#define STM32_UART_UART4_TX_DMA_STREAM STM32_DMA_STREAM_ID(2, 1)
 #define STM32_UART_UART4_TX_DMA_CHAN   STM32_DMAMUX1_UART4_TX
-#define STM32_UART_UART7_RX_DMA_STREAM STM32_DMA_STREAM_ID(2, 0)
+#define STM32_UART_UART7_RX_DMA_STREAM STM32_DMA_STREAM_ID(1, 7)
 #define STM32_UART_UART7_RX_DMA_CHAN   STM32_DMAMUX1_UART7_RX
-#define STM32_UART_UART7_TX_DMA_STREAM STM32_DMA_STREAM_ID(2, 1)
+#define STM32_UART_UART7_TX_DMA_STREAM STM32_DMA_STREAM_ID(2, 0)
 #define STM32_UART_UART7_TX_DMA_CHAN   STM32_DMAMUX1_UART7_TX
 #define STM32_UART_USART2_RX_DMA_STREAM STM32_DMA_STREAM_ID(1, 0)
 #define STM32_UART_USART2_RX_DMA_CHAN  STM32_DMAMUX1_USART2_RX
-#define STM32_UART_USART2_TX_DMA_STREAM STM32_DMA_STREAM_ID(2, 3)
+#define STM32_UART_USART2_TX_DMA_STREAM STM32_DMA_STREAM_ID(2, 2)
 #define STM32_UART_USART2_TX_DMA_CHAN  STM32_DMAMUX1_USART2_TX
 
 // Mask of DMA streams which are shared
@@ -527,13 +513,13 @@
 #define IRQ_DISABLE_HAL_CRASH_SERIAL_PORT() nvicDisableVector(STM32_USART2_NUMBER)
 #define RCC_RESET_HAL_CRASH_SERIAL_PORT() rccResetUSART2(); rccEnableUSART2(true)
 #define HAL_CRASH_SERIAL_PORT_CLOCK STM32_USART2CLK
-#define HAL_OTG1_CONFIG {(BaseSequentialStream*) &SDU1, 1, true, false, 0, 0, false, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+#define HAL_OTG1_CONFIG {(BaseSequentialStream*) &SDU1, 1, true, false, 0, 0, false, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, UINT8_MAX,}
 #define HAL_HAVE_RTSCTS_SERIAL1
-#define HAL_UART7_CONFIG { (BaseSequentialStream*) &SD7, 7, false, STM32_UART7_RX_DMA_CONFIG, STM32_UART7_TX_DMA_CONFIG, PAL_LINE(GPIOE,8U), PAL_LINE(GPIOE,7U), PAL_LINE(GPIOE,9U), PAL_LINE(GPIOE,10U), -1, 0, -1, 0, 0}
-#define HAL_USART2_CONFIG { (BaseSequentialStream*) &SD2, 2, false, STM32_USART2_RX_DMA_CONFIG, STM32_USART2_TX_DMA_CONFIG, PAL_LINE(GPIOD,5U), PAL_LINE(GPIOD,6U), 0, 0, -1, 0, -1, 0, 0}
-#define HAL_UART4_CONFIG { (BaseSequentialStream*) &SD4, 4, false, STM32_UART4_RX_DMA_CONFIG, STM32_UART4_TX_DMA_CONFIG, PAL_LINE(GPIOA,0U), PAL_LINE(GPIOB,8U), 0, 0, -1, 0, -1, 0, 0}
-#define HAL_USART6_CONFIG { (BaseSequentialStream*) &SD6, 6, false, STM32_USART6_RX_DMA_CONFIG, STM32_USART6_TX_DMA_CONFIG, PAL_LINE(GPIOC,6U), 0, 0, 0, -1, 0, -1, 0, 0}
-#define HAL_OTG2_CONFIG {(BaseSequentialStream*) &SDU2, 2, true, false, 0, 0, false, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2}
+#define HAL_UART7_CONFIG { (BaseSequentialStream*) &SD7, 7, false, STM32_UART7_RX_DMA_CONFIG, STM32_UART7_TX_DMA_CONFIG, PAL_LINE(GPIOE,8U), PAL_LINE(GPIOE,7U), PAL_LINE(GPIOE,9U), PAL_LINE(GPIOE,10U), -1, 0, -1, 0, 0, 7}
+#define HAL_USART2_CONFIG { (BaseSequentialStream*) &SD2, 2, false, STM32_USART2_RX_DMA_CONFIG, STM32_USART2_TX_DMA_CONFIG, PAL_LINE(GPIOD,5U), PAL_LINE(GPIOD,6U), 0, 0, -1, 0, -1, 0, 0, UINT8_MAX}
+#define HAL_UART4_CONFIG { (BaseSequentialStream*) &SD4, 4, false, STM32_UART4_RX_DMA_CONFIG, STM32_UART4_TX_DMA_CONFIG, PAL_LINE(GPIOA,0U), PAL_LINE(GPIOB,8U), 0, 0, -1, 0, -1, 0, 0, UINT8_MAX}
+#define HAL_USART6_CONFIG { (BaseSequentialStream*) &SD6, 6, false, STM32_USART6_RX_DMA_CONFIG, STM32_USART6_TX_DMA_CONFIG, PAL_LINE(GPIOC,6U), 0, 0, 0, -1, 0, -1, 0, 0, UINT8_MAX}
+#define HAL_OTG2_CONFIG {(BaseSequentialStream*) &SDU2, 2, true, false, 0, 0, false, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, UINT8_MAX,}
 #define AP_FEATURE_RTSCTS 1
 #define HAL_OTG2_UART_INDEX 5
 #define HAL_HAVE_DUAL_USB_CDC 1
@@ -557,7 +543,6 @@
 
 
 #define AP_BOOTLOADER_FLASHING_ENABLED 1
-#define HAL_HAVE_AP_ROMFS_EMBEDDED_H 1
 
 /*
 * I/O ports initial setup, this configuration is established soon after reset
@@ -584,6 +569,7 @@
 /* PORTA:
  PA0 UART4_TX UART4 AF8
  PA3 TIM5_CH4 TIM5 AF2 PWM6
+ PA4 VDD_5V_SENS ADC1 ADC1_IN18
  PA5 SPI1_SCK SPI1 AF5
  PA6 SPI1_MISO SPI1 AF5
  PA11 OTG_FS_DM OTG1 AF10
@@ -596,7 +582,7 @@
                            PIN_MODE_INPUT(1U) | \
                            PIN_MODE_INPUT(2U) | \
                            PIN_MODE_ALTERNATE(3U) | \
-                           PIN_MODE_INPUT(4U) | \
+                           PIN_MODE_ANALOG(4U) | \
                            PIN_MODE_ALTERNATE(5U) | \
                            PIN_MODE_ALTERNATE(6U) | \
                            PIN_MODE_INPUT(7U) | \
@@ -810,9 +796,9 @@
                            PIN_AFIO_AF(15U, 0U))
 
 /* PORTC:
- PC0 BATT_VOLTAGE_SENS ADC1 ADC1_IN10
- PC2 BATT_CURRENT_SENS ADC1 ADC1_IN12
  PC3 RSSI_ADC ADC1 ADC1_IN13
+ PC4 BATT_CURRENT_SENS ADC1 ADC1_IN4
+ PC5 BATT_VOLTAGE_SENS ADC1 ADC1_IN8
  PC6 USART6_TX USART6 AF7
  PC7 TIM3_CH2 TIM3 AF2
  PC8 SDMMC1_D0 SDMMC1 AF12
@@ -822,12 +808,12 @@
  PC12 SDMMC1_CK SDMMC1 AF12
 */
 
-#define VAL_GPIOC_MODER   (PIN_MODE_ANALOG(0U) | \
+#define VAL_GPIOC_MODER   (PIN_MODE_INPUT(0U) | \
                            PIN_MODE_INPUT(1U) | \
-                           PIN_MODE_ANALOG(2U) | \
+                           PIN_MODE_INPUT(2U) | \
                            PIN_MODE_ANALOG(3U) | \
-                           PIN_MODE_INPUT(4U) | \
-                           PIN_MODE_INPUT(5U) | \
+                           PIN_MODE_ANALOG(4U) | \
+                           PIN_MODE_ANALOG(5U) | \
                            PIN_MODE_ALTERNATE(6U) | \
                            PIN_MODE_ALTERNATE(7U) | \
                            PIN_MODE_ALTERNATE(8U) | \
@@ -1167,8 +1153,8 @@
 
 /* PORTF:
  PF0 BMI055_DRDY_G INPUT
- PF13 BATT2_VOLTAGE_SENS ADC2 ADC2_IN2
- PF14 BATT2_CURRENT_SENS ADC2 ADC2_IN6
+ PF11 BATT2_VOLTAGE_SENS ADC1 ADC1_IN2
+ PF12 BATT2_CURRENT_SENS ADC1 ADC1_IN6
 */
 
 #define VAL_GPIOF_MODER   (PIN_MODE_INPUT(0U) | \
@@ -1182,10 +1168,10 @@
                            PIN_MODE_INPUT(8U) | \
                            PIN_MODE_INPUT(9U) | \
                            PIN_MODE_INPUT(10U) | \
-                           PIN_MODE_INPUT(11U) | \
-                           PIN_MODE_INPUT(12U) | \
-                           PIN_MODE_ANALOG(13U) | \
-                           PIN_MODE_ANALOG(14U) | \
+                           PIN_MODE_ANALOG(11U) | \
+                           PIN_MODE_ANALOG(12U) | \
+                           PIN_MODE_INPUT(13U) | \
+                           PIN_MODE_INPUT(14U) | \
                            PIN_MODE_INPUT(15U))
 
 #define VAL_GPIOF_OTYPER  (PIN_OTYPE_PUSHPULL(0U) | \
@@ -1828,12 +1814,21 @@
 #define HAL_BOARD_LOG_DIRECTORY "/APM/LOGS"
 #endif
 
+// a similar define is present in AP_HAL_Boards.h:
+#ifndef HAL_OS_FATFS_IO
+#define HAL_OS_FATFS_IO 0
+#endif
+
+#ifndef AP_TERRAIN_AVAILABLE
+// enable terrain only if there's an SD card available:
+#define AP_TERRAIN_AVAILABLE HAL_OS_FATFS_IO
+#endif
+
+#if AP_TERRAIN_AVAILABLE
 #ifndef HAL_BOARD_TERRAIN_DIRECTORY
 #define HAL_BOARD_TERRAIN_DIRECTORY "/APM/TERRAIN"
 #endif
-
-// enable terrain only if there's an SD card available:
-#define AP_TERRAIN_AVAILABLE HAL_OS_FATFS_IO
+#endif  // AP_TERRAIN_AVAILABLE
 
 
 // end normal defaults

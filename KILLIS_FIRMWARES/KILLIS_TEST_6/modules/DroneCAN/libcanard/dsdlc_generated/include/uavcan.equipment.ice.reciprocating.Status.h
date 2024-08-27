@@ -146,14 +146,14 @@ void _uavcan_equipment_ice_reciprocating_Status_encode(uint8_t* buffer, uint32_t
     *bit_ofs += 6;
     canardEncodeScalar(buffer, *bit_ofs, 3, &msg->spark_plug_usage);
     *bit_ofs += 3;
-    if (!tao) {
-        canardEncodeScalar(buffer, *bit_ofs, 5, &msg->cylinder_status.len);
-        *bit_ofs += 5;
-    }
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wtype-limits"
-    const size_t cylinder_status_len = msg->cylinder_status.len > 16 ? 16 : msg->cylinder_status.len;
+    const uint8_t cylinder_status_len = msg->cylinder_status.len > 16 ? 16 : msg->cylinder_status.len;
 #pragma GCC diagnostic pop
+    if (!tao) {
+        canardEncodeScalar(buffer, *bit_ofs, 5, &cylinder_status_len);
+        *bit_ofs += 5;
+    }
     for (size_t i=0; i < cylinder_status_len; i++) {
         _uavcan_equipment_ice_reciprocating_CylinderStatus_encode(buffer, bit_ofs, &msg->cylinder_status.data[i], false);
     }
@@ -260,8 +260,10 @@ bool _uavcan_equipment_ice_reciprocating_Status_decode(const CanardRxTransfer* t
 
     if (tao) {
         msg->cylinder_status.len = 0;
-        while ((transfer->payload_len*8) > *bit_ofs) {
-            if (_uavcan_equipment_ice_reciprocating_CylinderStatus_decode(transfer, bit_ofs, &msg->cylinder_status.data[msg->cylinder_status.len], false)) {return true;}
+        size_t max_len = 16;
+        uint32_t max_bits = (transfer->payload_len*8)-7; // TAO elements must be >= 8 bits
+        while (max_bits > *bit_ofs) {
+            if (!max_len-- || _uavcan_equipment_ice_reciprocating_CylinderStatus_decode(transfer, bit_ofs, &msg->cylinder_status.data[msg->cylinder_status.len], false)) {return true;}
             msg->cylinder_status.len++;
         }
     } else {

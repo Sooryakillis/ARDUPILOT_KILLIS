@@ -96,12 +96,12 @@ void _uavcan_equipment_gnss_Fix_encode(uint8_t* buffer, uint32_t* bit_ofs, struc
     }
     *bit_ofs += 16;
     *bit_ofs += 4;
-    canardEncodeScalar(buffer, *bit_ofs, 4, &msg->position_covariance.len);
-    *bit_ofs += 4;
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wtype-limits"
-    const size_t position_covariance_len = msg->position_covariance.len > 9 ? 9 : msg->position_covariance.len;
+    const uint8_t position_covariance_len = msg->position_covariance.len > 9 ? 9 : msg->position_covariance.len;
 #pragma GCC diagnostic pop
+    canardEncodeScalar(buffer, *bit_ofs, 4, &position_covariance_len);
+    *bit_ofs += 4;
     for (size_t i=0; i < position_covariance_len; i++) {
         {
             uint16_t float16_val = canardConvertNativeFloatToFloat16(msg->position_covariance.data[i]);
@@ -109,14 +109,14 @@ void _uavcan_equipment_gnss_Fix_encode(uint8_t* buffer, uint32_t* bit_ofs, struc
         }
         *bit_ofs += 16;
     }
-    if (!tao) {
-        canardEncodeScalar(buffer, *bit_ofs, 4, &msg->velocity_covariance.len);
-        *bit_ofs += 4;
-    }
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wtype-limits"
-    const size_t velocity_covariance_len = msg->velocity_covariance.len > 9 ? 9 : msg->velocity_covariance.len;
+    const uint8_t velocity_covariance_len = msg->velocity_covariance.len > 9 ? 9 : msg->velocity_covariance.len;
 #pragma GCC diagnostic pop
+    if (!tao) {
+        canardEncodeScalar(buffer, *bit_ofs, 4, &velocity_covariance_len);
+        *bit_ofs += 4;
+    }
     for (size_t i=0; i < velocity_covariance_len; i++) {
         {
             uint16_t float16_val = canardConvertNativeFloatToFloat16(msg->velocity_covariance.data[i]);

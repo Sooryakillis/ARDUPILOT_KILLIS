@@ -41,12 +41,12 @@ void _ardupilot_equipment_power_BatteryCells_encode(uint8_t* buffer, uint32_t* b
     (void)msg;
     (void)tao;
 
-    canardEncodeScalar(buffer, *bit_ofs, 5, &msg->voltages.len);
-    *bit_ofs += 5;
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wtype-limits"
-    const size_t voltages_len = msg->voltages.len > 24 ? 24 : msg->voltages.len;
+    const uint8_t voltages_len = msg->voltages.len > 24 ? 24 : msg->voltages.len;
 #pragma GCC diagnostic pop
+    canardEncodeScalar(buffer, *bit_ofs, 5, &voltages_len);
+    *bit_ofs += 5;
     for (size_t i=0; i < voltages_len; i++) {
         {
             uint16_t float16_val = canardConvertNativeFloatToFloat16(msg->voltages.data[i]);

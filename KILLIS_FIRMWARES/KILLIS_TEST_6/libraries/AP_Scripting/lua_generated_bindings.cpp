@@ -8,7 +8,10 @@
 #include <AP_Scripting/lua_boxed_numerics.h>
 #include <AP_Scripting/lua_bindings.h>
 #include <AP_Scripting/lua_scripts.h>
+
+#include <AP_Scheduler/AP_Scheduler.h>
 extern const AP_HAL::HAL& hal;
+#include <AP_VisualOdom/AP_VisualOdom.h>
 #include <AP_Networking/AP_Networking_Config.h>
 #if AP_NETWORKING_ENABLED
 #include <AP_Networking/AP_Networking.h>
@@ -47,6 +50,7 @@ extern const AP_HAL::HAL& hal;
 #if APM_BUILD_TYPE(APM_BUILD_ArduPlane)||APM_BUILD_COPTER_OR_HELI
 #include <AC_AttitudeControl/AC_AttitudeControl.h>
 #endif // APM_BUILD_TYPE(APM_BUILD_ArduPlane)||APM_BUILD_COPTER_OR_HELI
+#include <AC_PrecLand/AC_PrecLand.h>
 #include <AP_Follow/AP_Follow.h>
 #include <AP_Common/AP_FWVersion.h>
 #if APM_BUILD_TYPE(APM_BUILD_ArduPlane)||APM_BUILD_COPTER_OR_HELI
@@ -94,7 +98,7 @@ extern const AP_HAL::HAL& hal;
 #include <AP_ESC_Telem/AP_ESC_Telem.h>
 #include <AP_OpticalFlow/AP_OpticalFlow.h>
 #include <AP_Baro/AP_Baro.h>
-#include <AP_SerialManager/AP_SerialManager.h>
+#include <AP_Scripting/AP_Scripting_SerialAccess.h>
 #include <RC_Channel/RC_Channel.h>
 #include <SRV_Channel/SRV_Channel.h>
 #include <AP_SerialLED/AP_SerialLED.h>
@@ -127,6 +131,10 @@ int binding_argcheck(lua_State *L, int expected_arg_count) {
         return luaL_argerror(L, args, "too few arguments");
     }
     return 0;
+}
+
+int field_argerror(lua_State *L) {
+    return binding_argcheck(L, -1); // force too many args error
 }
 
 bool userdata_zero_arg_check(lua_State *L) {
@@ -185,12 +193,19 @@ uint32_t get_uint32(lua_State *L, int arg_num, uint32_t min_val, uint32_t max_va
     return lua_unint32;
 }
 
-int new_ap_object(lua_State *L, size_t size, const char * name) {
-    luaL_checkstack(L, 2, "Out of stack");
-    lua_newuserdata(L, size);
+void * new_ap_object(lua_State *L, size_t size, const char * name) {
+    void * ud = lua_newuserdata(L, size);
     luaL_getmetatable(L, name);
     lua_setmetatable(L, -2);
-    return 1;
+    return ud;
+}
+
+void ** check_ap_object(lua_State *L, int arg_num, const char * name) {
+    void ** data = (void **)luaL_checkudata(L, arg_num, name);
+    if (*data == NULL) {
+        luaL_error(L, "internal error: %s is null", name); // does not return
+    }
+    return data;
 }
 
 static int not_supported_error(lua_State *L, int arg, const char* name) {
@@ -210,37 +225,38 @@ struct userdata_meta {
     const luaL_Reg *operators;
 };
 
-static bool load_function(lua_State *L, const luaL_Reg *list, const uint8_t length, const char* name) {
+static int load_function(lua_State *L, const luaL_Reg *list, const uint8_t length) {
+    const char * name = luaL_checkstring(L, 2);
     for (uint8_t i = 0; i < length; i++) {
         if (strcmp(name,list[i].name) == 0) {
             lua_pushcfunction(L, list[i].func);
-            return true;
+            return 1;
         }
     }
-    return false;
+    return 0;
 }
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-function"
-static bool load_enum(lua_State *L, const userdata_enum *list, const uint8_t length, const char* name) {
+static int load_enum(lua_State *L, const userdata_enum *list, const uint8_t length) {
+    const char * name = luaL_checkstring(L, 2);
     for (uint8_t i = 0; i < length; i++) {
         if (strcmp(name,list[i].name) == 0) {
             lua_pushinteger(L, list[i].value);
-            return true;
+            return 1;
         }
     }
-    return false;
+    return 0;
 }
 #pragma GCC diagnostic pop
 
 #if AP_FILESYSTEM_FILE_READING_ENABLED
-int new_AP_Filesystem__stat_t(lua_State *L) {
-    luaL_checkstack(L, 2, "Out of stack");
+AP_Filesystem::stat_t * new_AP_Filesystem__stat_t(lua_State *L) {
     void *ud = lua_newuserdata(L, sizeof(AP_Filesystem::stat_t));
     new (ud) AP_Filesystem::stat_t();
     luaL_getmetatable(L, "stat_t");
     lua_setmetatable(L, -2);
-    return 1;
+    return (AP_Filesystem::stat_t *)ud;
 }
 
 int lua_new_AP_Filesystem__stat_t(lua_State *L) {
@@ -248,27 +264,34 @@ int lua_new_AP_Filesystem__stat_t(lua_State *L) {
     if (!warned && userdata_zero_arg_check(L)) {
         warned = true;
     }
-    return new_AP_Filesystem__stat_t(L);
+    new_AP_Filesystem__stat_t(L);
+    return 1;
 }
 #endif // AP_FILESYSTEM_FILE_READING_ENABLED
 
-int new_uint32_t(lua_State *L) {
-    luaL_checkstack(L, 2, "Out of stack");
+uint64_t * new_uint64_t(lua_State *L) {
+    void *ud = lua_newuserdata(L, sizeof(uint64_t));
+    new (ud) uint64_t();
+    luaL_getmetatable(L, "uint64_t");
+    lua_setmetatable(L, -2);
+    return (uint64_t *)ud;
+}
+
+uint32_t * new_uint32_t(lua_State *L) {
     void *ud = lua_newuserdata(L, sizeof(uint32_t));
     new (ud) uint32_t();
     luaL_getmetatable(L, "uint32_t");
     lua_setmetatable(L, -2);
-    return 1;
+    return (uint32_t *)ud;
 }
 
 #if (AP_EFI_SCRIPTING_ENABLED == 1)
-int new_EFI_State(lua_State *L) {
-    luaL_checkstack(L, 2, "Out of stack");
+EFI_State * new_EFI_State(lua_State *L) {
     void *ud = lua_newuserdata(L, sizeof(EFI_State));
     new (ud) EFI_State();
     luaL_getmetatable(L, "EFI_State");
     lua_setmetatable(L, -2);
-    return 1;
+    return (EFI_State *)ud;
 }
 
 int lua_new_EFI_State(lua_State *L) {
@@ -276,18 +299,18 @@ int lua_new_EFI_State(lua_State *L) {
     if (!warned && userdata_zero_arg_check(L)) {
         warned = true;
     }
-    return new_EFI_State(L);
+    new_EFI_State(L);
+    return 1;
 }
 #endif // (AP_EFI_SCRIPTING_ENABLED == 1)
 
 #if (AP_EFI_SCRIPTING_ENABLED == 1)
-int new_Cylinder_Status(lua_State *L) {
-    luaL_checkstack(L, 2, "Out of stack");
+Cylinder_Status * new_Cylinder_Status(lua_State *L) {
     void *ud = lua_newuserdata(L, sizeof(Cylinder_Status));
     new (ud) Cylinder_Status();
     luaL_getmetatable(L, "Cylinder_Status");
     lua_setmetatable(L, -2);
-    return 1;
+    return (Cylinder_Status *)ud;
 }
 
 int lua_new_Cylinder_Status(lua_State *L) {
@@ -295,18 +318,18 @@ int lua_new_Cylinder_Status(lua_State *L) {
     if (!warned && userdata_zero_arg_check(L)) {
         warned = true;
     }
-    return new_Cylinder_Status(L);
+    new_Cylinder_Status(L);
+    return 1;
 }
 #endif // (AP_EFI_SCRIPTING_ENABLED == 1)
 
 #if AP_CAMERA_ENABLED && (AP_CAMERA_SCRIPTING_ENABLED == 1)
-int new_AP_Camera__camera_state_t(lua_State *L) {
-    luaL_checkstack(L, 2, "Out of stack");
+AP_Camera::camera_state_t * new_AP_Camera__camera_state_t(lua_State *L) {
     void *ud = lua_newuserdata(L, sizeof(AP_Camera::camera_state_t));
     new (ud) AP_Camera::camera_state_t();
     luaL_getmetatable(L, "AP_Camera::camera_state_t");
     lua_setmetatable(L, -2);
-    return 1;
+    return (AP_Camera::camera_state_t *)ud;
 }
 
 int lua_new_AP_Camera__camera_state_t(lua_State *L) {
@@ -314,18 +337,18 @@ int lua_new_AP_Camera__camera_state_t(lua_State *L) {
     if (!warned && userdata_zero_arg_check(L)) {
         warned = true;
     }
-    return new_AP_Camera__camera_state_t(L);
+    new_AP_Camera__camera_state_t(L);
+    return 1;
 }
 #endif // AP_CAMERA_ENABLED && (AP_CAMERA_SCRIPTING_ENABLED == 1)
 
 #if AP_SCRIPTING_CAN_SENSOR_ENABLED
-int new_AP_HAL__CANFrame(lua_State *L) {
-    luaL_checkstack(L, 2, "Out of stack");
+AP_HAL::CANFrame * new_AP_HAL__CANFrame(lua_State *L) {
     void *ud = lua_newuserdata(L, sizeof(AP_HAL::CANFrame));
     new (ud) AP_HAL::CANFrame();
     luaL_getmetatable(L, "CANFrame");
     lua_setmetatable(L, -2);
-    return 1;
+    return (AP_HAL::CANFrame *)ud;
 }
 
 int lua_new_AP_HAL__CANFrame(lua_State *L) {
@@ -333,18 +356,18 @@ int lua_new_AP_HAL__CANFrame(lua_State *L) {
     if (!warned && userdata_zero_arg_check(L)) {
         warned = true;
     }
-    return new_AP_HAL__CANFrame(L);
+    new_AP_HAL__CANFrame(L);
+    return 1;
 }
 #endif // AP_SCRIPTING_CAN_SENSOR_ENABLED
 
 #if APM_BUILD_TYPE(APM_BUILD_ArduPlane)||APM_BUILD_COPTER_OR_HELI
-int new_AP_MotorsMatrix_Scripting_Dynamic__factor_table(lua_State *L) {
-    luaL_checkstack(L, 2, "Out of stack");
+AP_MotorsMatrix_Scripting_Dynamic::factor_table * new_AP_MotorsMatrix_Scripting_Dynamic__factor_table(lua_State *L) {
     void *ud = lua_newuserdata(L, sizeof(AP_MotorsMatrix_Scripting_Dynamic::factor_table));
     new (ud) AP_MotorsMatrix_Scripting_Dynamic::factor_table();
     luaL_getmetatable(L, "motor_factor_table");
     lua_setmetatable(L, -2);
-    return 1;
+    return (AP_MotorsMatrix_Scripting_Dynamic::factor_table *)ud;
 }
 
 int lua_new_AP_MotorsMatrix_Scripting_Dynamic__factor_table(lua_State *L) {
@@ -352,18 +375,18 @@ int lua_new_AP_MotorsMatrix_Scripting_Dynamic__factor_table(lua_State *L) {
     if (!warned && userdata_zero_arg_check(L)) {
         warned = true;
     }
-    return new_AP_MotorsMatrix_Scripting_Dynamic__factor_table(L);
+    new_AP_MotorsMatrix_Scripting_Dynamic__factor_table(L);
+    return 1;
 }
 #endif // APM_BUILD_TYPE(APM_BUILD_ArduPlane)||APM_BUILD_COPTER_OR_HELI
 
 #if AP_MISSION_ENABLED
-int new_mavlink_mission_item_int_t(lua_State *L) {
-    luaL_checkstack(L, 2, "Out of stack");
+mavlink_mission_item_int_t * new_mavlink_mission_item_int_t(lua_State *L) {
     void *ud = lua_newuserdata(L, sizeof(mavlink_mission_item_int_t));
     new (ud) mavlink_mission_item_int_t();
     luaL_getmetatable(L, "mavlink_mission_item_int_t");
     lua_setmetatable(L, -2);
-    return 1;
+    return (mavlink_mission_item_int_t *)ud;
 }
 
 int lua_new_mavlink_mission_item_int_t(lua_State *L) {
@@ -371,27 +394,26 @@ int lua_new_mavlink_mission_item_int_t(lua_State *L) {
     if (!warned && userdata_zero_arg_check(L)) {
         warned = true;
     }
-    return new_mavlink_mission_item_int_t(L);
+    new_mavlink_mission_item_int_t(L);
+    return 1;
 }
 #endif // AP_MISSION_ENABLED
 
-int new_Parameter(lua_State *L) {
-    luaL_checkstack(L, 2, "Out of stack");
+Parameter * new_Parameter(lua_State *L) {
     void *ud = lua_newuserdata(L, sizeof(Parameter));
     new (ud) Parameter();
     luaL_getmetatable(L, "Parameter");
     lua_setmetatable(L, -2);
-    return 1;
+    return (Parameter *)ud;
 }
 
 #if (HAL_WITH_ESC_TELEM == 1)
-int new_AP_ESC_Telem_Backend__TelemetryData(lua_State *L) {
-    luaL_checkstack(L, 2, "Out of stack");
+AP_ESC_Telem_Backend::TelemetryData * new_AP_ESC_Telem_Backend__TelemetryData(lua_State *L) {
     void *ud = lua_newuserdata(L, sizeof(AP_ESC_Telem_Backend::TelemetryData));
     new (ud) AP_ESC_Telem_Backend::TelemetryData();
     luaL_getmetatable(L, "ESCTelemetryData");
     lua_setmetatable(L, -2);
-    return 1;
+    return (AP_ESC_Telem_Backend::TelemetryData *)ud;
 }
 
 int lua_new_AP_ESC_Telem_Backend__TelemetryData(lua_State *L) {
@@ -399,18 +421,26 @@ int lua_new_AP_ESC_Telem_Backend__TelemetryData(lua_State *L) {
     if (!warned && userdata_zero_arg_check(L)) {
         warned = true;
     }
-    return new_AP_ESC_Telem_Backend__TelemetryData(L);
+    new_AP_ESC_Telem_Backend__TelemetryData(L);
+    return 1;
 }
 #endif // (HAL_WITH_ESC_TELEM == 1)
 
-#if (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RANGEFINDER))
-int new_RangeFinder__RangeFinder_State(lua_State *L) {
-    luaL_checkstack(L, 2, "Out of stack");
+AP_Scripting_SerialAccess * new_AP_Scripting_SerialAccess(lua_State *L) {
+    void *ud = lua_newuserdata(L, sizeof(AP_Scripting_SerialAccess));
+    new (ud) AP_Scripting_SerialAccess();
+    luaL_getmetatable(L, "AP_Scripting_SerialAccess");
+    lua_setmetatable(L, -2);
+    return (AP_Scripting_SerialAccess *)ud;
+}
+
+#if AP_RANGEFINDER_ENABLED
+RangeFinder::RangeFinder_State * new_RangeFinder__RangeFinder_State(lua_State *L) {
     void *ud = lua_newuserdata(L, sizeof(RangeFinder::RangeFinder_State));
     new (ud) RangeFinder::RangeFinder_State();
     luaL_getmetatable(L, "RangeFinder_State");
     lua_setmetatable(L, -2);
-    return 1;
+    return (RangeFinder::RangeFinder_State *)ud;
 }
 
 int lua_new_RangeFinder__RangeFinder_State(lua_State *L) {
@@ -418,18 +448,18 @@ int lua_new_RangeFinder__RangeFinder_State(lua_State *L) {
     if (!warned && userdata_zero_arg_check(L)) {
         warned = true;
     }
-    return new_RangeFinder__RangeFinder_State(L);
+    new_RangeFinder__RangeFinder_State(L);
+    return 1;
 }
-#endif // (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RANGEFINDER))
+#endif // AP_RANGEFINDER_ENABLED
 
 #if AP_AHRS_ENABLED
-int new_Quaternion(lua_State *L) {
-    luaL_checkstack(L, 2, "Out of stack");
+Quaternion * new_Quaternion(lua_State *L) {
     void *ud = lua_newuserdata(L, sizeof(Quaternion));
     new (ud) Quaternion();
     luaL_getmetatable(L, "Quaternion");
     lua_setmetatable(L, -2);
-    return 1;
+    return (Quaternion *)ud;
 }
 
 int lua_new_Quaternion(lua_State *L) {
@@ -437,17 +467,17 @@ int lua_new_Quaternion(lua_State *L) {
     if (!warned && userdata_zero_arg_check(L)) {
         warned = true;
     }
-    return new_Quaternion(L);
+    new_Quaternion(L);
+    return 1;
 }
 #endif // AP_AHRS_ENABLED
 
-int new_Vector2f(lua_State *L) {
-    luaL_checkstack(L, 2, "Out of stack");
+Vector2f * new_Vector2f(lua_State *L) {
     void *ud = lua_newuserdata(L, sizeof(Vector2f));
     new (ud) Vector2f();
     luaL_getmetatable(L, "Vector2f");
     lua_setmetatable(L, -2);
-    return 1;
+    return (Vector2f *)ud;
 }
 
 int lua_new_Vector2f(lua_State *L) {
@@ -455,16 +485,16 @@ int lua_new_Vector2f(lua_State *L) {
     if (!warned && userdata_zero_arg_check(L)) {
         warned = true;
     }
-    return new_Vector2f(L);
+    new_Vector2f(L);
+    return 1;
 }
 
-int new_Vector3f(lua_State *L) {
-    luaL_checkstack(L, 2, "Out of stack");
+Vector3f * new_Vector3f(lua_State *L) {
     void *ud = lua_newuserdata(L, sizeof(Vector3f));
     new (ud) Vector3f();
     luaL_getmetatable(L, "Vector3f");
     lua_setmetatable(L, -2);
-    return 1;
+    return (Vector3f *)ud;
 }
 
 int lua_new_Vector3f(lua_State *L) {
@@ -472,17 +502,17 @@ int lua_new_Vector3f(lua_State *L) {
     if (!warned && userdata_zero_arg_check(L)) {
         warned = true;
     }
-    return new_Vector3f(L);
+    new_Vector3f(L);
+    return 1;
 }
 
 #if AP_BATTERY_SCRIPTING_ENABLED
-int new_BattMonitorScript_State(lua_State *L) {
-    luaL_checkstack(L, 2, "Out of stack");
+BattMonitorScript_State * new_BattMonitorScript_State(lua_State *L) {
     void *ud = lua_newuserdata(L, sizeof(BattMonitorScript_State));
     new (ud) BattMonitorScript_State();
     luaL_getmetatable(L, "BattMonitorScript_State");
     lua_setmetatable(L, -2);
-    return 1;
+    return (BattMonitorScript_State *)ud;
 }
 
 int lua_new_BattMonitorScript_State(lua_State *L) {
@@ -490,17 +520,17 @@ int lua_new_BattMonitorScript_State(lua_State *L) {
     if (!warned && userdata_zero_arg_check(L)) {
         warned = true;
     }
-    return new_BattMonitorScript_State(L);
+    new_BattMonitorScript_State(L);
+    return 1;
 }
 #endif // AP_BATTERY_SCRIPTING_ENABLED
 
-int new_Location(lua_State *L) {
-    luaL_checkstack(L, 2, "Out of stack");
+Location * new_Location(lua_State *L) {
     void *ud = lua_newuserdata(L, sizeof(Location));
     new (ud) Location();
     luaL_getmetatable(L, "Location");
     lua_setmetatable(L, -2);
-    return 1;
+    return (Location *)ud;
 }
 
 int lua_new_Location(lua_State *L) {
@@ -508,278 +538,214 @@ int lua_new_Location(lua_State *L) {
     if (!warned && userdata_zero_arg_check(L)) {
         warned = true;
     }
-    return new_Location(L);
+    new_Location(L);
+    return 1;
 }
 
 #if AP_FILESYSTEM_FILE_READING_ENABLED
 AP_Filesystem::stat_t * check_AP_Filesystem__stat_t(lua_State *L, int arg) {
-    void *data = luaL_checkudata(L, arg, "stat_t");
-    return (AP_Filesystem::stat_t *)data;
+    return (AP_Filesystem::stat_t *)luaL_checkudata(L, arg, "stat_t");
 }
 #endif // AP_FILESYSTEM_FILE_READING_ENABLED
 
+uint64_t * check_uint64_t(lua_State *L, int arg) {
+    return (uint64_t *)luaL_checkudata(L, arg, "uint64_t");
+}
+
 uint32_t * check_uint32_t(lua_State *L, int arg) {
-    void *data = luaL_checkudata(L, arg, "uint32_t");
-    return (uint32_t *)data;
+    return (uint32_t *)luaL_checkudata(L, arg, "uint32_t");
 }
 
 #if (AP_EFI_SCRIPTING_ENABLED == 1)
 EFI_State * check_EFI_State(lua_State *L, int arg) {
-    void *data = luaL_checkudata(L, arg, "EFI_State");
-    return (EFI_State *)data;
+    return (EFI_State *)luaL_checkudata(L, arg, "EFI_State");
 }
 #endif // (AP_EFI_SCRIPTING_ENABLED == 1)
 
 #if (AP_EFI_SCRIPTING_ENABLED == 1)
 Cylinder_Status * check_Cylinder_Status(lua_State *L, int arg) {
-    void *data = luaL_checkudata(L, arg, "Cylinder_Status");
-    return (Cylinder_Status *)data;
+    return (Cylinder_Status *)luaL_checkudata(L, arg, "Cylinder_Status");
 }
 #endif // (AP_EFI_SCRIPTING_ENABLED == 1)
 
 #if AP_CAMERA_ENABLED && (AP_CAMERA_SCRIPTING_ENABLED == 1)
 AP_Camera::camera_state_t * check_AP_Camera__camera_state_t(lua_State *L, int arg) {
-    void *data = luaL_checkudata(L, arg, "AP_Camera::camera_state_t");
-    return (AP_Camera::camera_state_t *)data;
+    return (AP_Camera::camera_state_t *)luaL_checkudata(L, arg, "AP_Camera::camera_state_t");
 }
 #endif // AP_CAMERA_ENABLED && (AP_CAMERA_SCRIPTING_ENABLED == 1)
 
 #if AP_SCRIPTING_CAN_SENSOR_ENABLED
 AP_HAL::CANFrame * check_AP_HAL__CANFrame(lua_State *L, int arg) {
-    void *data = luaL_checkudata(L, arg, "CANFrame");
-    return (AP_HAL::CANFrame *)data;
+    return (AP_HAL::CANFrame *)luaL_checkudata(L, arg, "CANFrame");
 }
 #endif // AP_SCRIPTING_CAN_SENSOR_ENABLED
 
 #if APM_BUILD_TYPE(APM_BUILD_ArduPlane)||APM_BUILD_COPTER_OR_HELI
 AP_MotorsMatrix_Scripting_Dynamic::factor_table * check_AP_MotorsMatrix_Scripting_Dynamic__factor_table(lua_State *L, int arg) {
-    void *data = luaL_checkudata(L, arg, "motor_factor_table");
-    return (AP_MotorsMatrix_Scripting_Dynamic::factor_table *)data;
+    return (AP_MotorsMatrix_Scripting_Dynamic::factor_table *)luaL_checkudata(L, arg, "motor_factor_table");
 }
 #endif // APM_BUILD_TYPE(APM_BUILD_ArduPlane)||APM_BUILD_COPTER_OR_HELI
 
 #if AP_MISSION_ENABLED
 mavlink_mission_item_int_t * check_mavlink_mission_item_int_t(lua_State *L, int arg) {
-    void *data = luaL_checkudata(L, arg, "mavlink_mission_item_int_t");
-    return (mavlink_mission_item_int_t *)data;
+    return (mavlink_mission_item_int_t *)luaL_checkudata(L, arg, "mavlink_mission_item_int_t");
 }
 #endif // AP_MISSION_ENABLED
 
 Parameter * check_Parameter(lua_State *L, int arg) {
-    void *data = luaL_checkudata(L, arg, "Parameter");
-    return (Parameter *)data;
+    return (Parameter *)luaL_checkudata(L, arg, "Parameter");
 }
 
 #if (HAL_WITH_ESC_TELEM == 1)
 AP_ESC_Telem_Backend::TelemetryData * check_AP_ESC_Telem_Backend__TelemetryData(lua_State *L, int arg) {
-    void *data = luaL_checkudata(L, arg, "ESCTelemetryData");
-    return (AP_ESC_Telem_Backend::TelemetryData *)data;
+    return (AP_ESC_Telem_Backend::TelemetryData *)luaL_checkudata(L, arg, "ESCTelemetryData");
 }
 #endif // (HAL_WITH_ESC_TELEM == 1)
 
-#if (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RANGEFINDER))
-RangeFinder::RangeFinder_State * check_RangeFinder__RangeFinder_State(lua_State *L, int arg) {
-    void *data = luaL_checkudata(L, arg, "RangeFinder_State");
-    return (RangeFinder::RangeFinder_State *)data;
+AP_Scripting_SerialAccess * check_AP_Scripting_SerialAccess(lua_State *L, int arg) {
+    return (AP_Scripting_SerialAccess *)luaL_checkudata(L, arg, "AP_Scripting_SerialAccess");
 }
-#endif // (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RANGEFINDER))
+
+#if AP_RANGEFINDER_ENABLED
+RangeFinder::RangeFinder_State * check_RangeFinder__RangeFinder_State(lua_State *L, int arg) {
+    return (RangeFinder::RangeFinder_State *)luaL_checkudata(L, arg, "RangeFinder_State");
+}
+#endif // AP_RANGEFINDER_ENABLED
 
 #if AP_AHRS_ENABLED
 Quaternion * check_Quaternion(lua_State *L, int arg) {
-    void *data = luaL_checkudata(L, arg, "Quaternion");
-    return (Quaternion *)data;
+    return (Quaternion *)luaL_checkudata(L, arg, "Quaternion");
 }
 #endif // AP_AHRS_ENABLED
 
 Vector2f * check_Vector2f(lua_State *L, int arg) {
-    void *data = luaL_checkudata(L, arg, "Vector2f");
-    return (Vector2f *)data;
+    return (Vector2f *)luaL_checkudata(L, arg, "Vector2f");
 }
 
 Vector3f * check_Vector3f(lua_State *L, int arg) {
-    void *data = luaL_checkudata(L, arg, "Vector3f");
-    return (Vector3f *)data;
+    return (Vector3f *)luaL_checkudata(L, arg, "Vector3f");
 }
 
 #if AP_BATTERY_SCRIPTING_ENABLED
 BattMonitorScript_State * check_BattMonitorScript_State(lua_State *L, int arg) {
-    void *data = luaL_checkudata(L, arg, "BattMonitorScript_State");
-    return (BattMonitorScript_State *)data;
+    return (BattMonitorScript_State *)luaL_checkudata(L, arg, "BattMonitorScript_State");
 }
 #endif // AP_BATTERY_SCRIPTING_ENABLED
 
 Location * check_Location(lua_State *L, int arg) {
-    void *data = luaL_checkudata(L, arg, "Location");
-    return (Location *)data;
+    return (Location *)luaL_checkudata(L, arg, "Location");
 }
 
 #if (AP_EFI_SCRIPTING_ENABLED == 1)
-int new_AP_EFI_Backend(lua_State *L) {
-    return new_ap_object(L, sizeof(AP_EFI_Backend *), "AP_EFI_Backend");
+AP_EFI_Backend ** new_AP_EFI_Backend(lua_State *L) {
+    return (AP_EFI_Backend **)new_ap_object(L, sizeof(AP_EFI_Backend *), "AP_EFI_Backend");
 }
 #endif // (AP_EFI_SCRIPTING_ENABLED == 1)
 
 #if AP_SCRIPTING_CAN_SENSOR_ENABLED
-int new_ScriptingCANBuffer(lua_State *L) {
-    return new_ap_object(L, sizeof(ScriptingCANBuffer *), "ScriptingCANBuffer");
+ScriptingCANBuffer ** new_ScriptingCANBuffer(lua_State *L) {
+    return (ScriptingCANBuffer **)new_ap_object(L, sizeof(ScriptingCANBuffer *), "ScriptingCANBuffer");
 }
 #endif // AP_SCRIPTING_CAN_SENSOR_ENABLED
 
-int new_AP_HAL__PWMSource(lua_State *L) {
-    return new_ap_object(L, sizeof(AP_HAL::PWMSource *), "AP_HAL::PWMSource");
+AP_HAL::PWMSource ** new_AP_HAL__PWMSource(lua_State *L) {
+    return (AP_HAL::PWMSource **)new_ap_object(L, sizeof(AP_HAL::PWMSource *), "AP_HAL::PWMSource");
 }
 
 #if !defined(HAL_DISABLE_ADC_DRIVER)
-int new_AP_HAL__AnalogSource(lua_State *L) {
-    return new_ap_object(L, sizeof(AP_HAL::AnalogSource *), "AP_HAL::AnalogSource");
+AP_HAL::AnalogSource ** new_AP_HAL__AnalogSource(lua_State *L) {
+    return (AP_HAL::AnalogSource **)new_ap_object(L, sizeof(AP_HAL::AnalogSource *), "AP_HAL::AnalogSource");
 }
 #endif // !defined(HAL_DISABLE_ADC_DRIVER)
 
 #if (AP_NETWORKING_ENABLED==1)
-int new_SocketAPM(lua_State *L) {
-    return new_ap_object(L, sizeof(SocketAPM *), "SocketAPM");
+SocketAPM ** new_SocketAPM(lua_State *L) {
+    return (SocketAPM **)new_ap_object(L, sizeof(SocketAPM *), "SocketAPM");
 }
 #endif // (AP_NETWORKING_ENABLED==1)
 
-int new_AP_HAL__I2CDevice(lua_State *L) {
-    return new_ap_object(L, sizeof(AP_HAL::I2CDevice *), "AP_HAL::I2CDevice");
-}
-
-int new_AP_HAL__UARTDriver(lua_State *L) {
-    return new_ap_object(L, sizeof(AP_HAL::UARTDriver *), "AP_HAL::UARTDriver");
+AP_HAL::I2CDevice ** new_AP_HAL__I2CDevice(lua_State *L) {
+    return (AP_HAL::I2CDevice **)new_ap_object(L, sizeof(AP_HAL::I2CDevice *), "AP_HAL::I2CDevice");
 }
 
 #if AP_RC_CHANNEL_ENABLED
-int new_RC_Channel(lua_State *L) {
-    return new_ap_object(L, sizeof(RC_Channel *), "RC_Channel");
+RC_Channel ** new_RC_Channel(lua_State *L) {
+    return (RC_Channel **)new_ap_object(L, sizeof(RC_Channel *), "RC_Channel");
 }
 #endif // AP_RC_CHANNEL_ENABLED
 
-#if (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RANGEFINDER))
-int new_AP_RangeFinder_Backend(lua_State *L) {
-    return new_ap_object(L, sizeof(AP_RangeFinder_Backend *), "AP_RangeFinder_Backend");
+#if AP_RANGEFINDER_ENABLED
+AP_RangeFinder_Backend ** new_AP_RangeFinder_Backend(lua_State *L) {
+    return (AP_RangeFinder_Backend **)new_ap_object(L, sizeof(AP_RangeFinder_Backend *), "AP_RangeFinder_Backend");
 }
-#endif // (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RANGEFINDER))
+#endif // AP_RANGEFINDER_ENABLED
 
 #if HAL_PROXIMITY_ENABLED == 1
-int new_AP_Proximity_Backend(lua_State *L) {
-    return new_ap_object(L, sizeof(AP_Proximity_Backend *), "AP_Proximity_Backend");
+AP_Proximity_Backend ** new_AP_Proximity_Backend(lua_State *L) {
+    return (AP_Proximity_Backend **)new_ap_object(L, sizeof(AP_Proximity_Backend *), "AP_Proximity_Backend");
 }
 #endif // HAL_PROXIMITY_ENABLED == 1
 
 #if (AP_EFI_SCRIPTING_ENABLED == 1)
 AP_EFI_Backend ** check_AP_EFI_Backend(lua_State *L, int arg) {
-    AP_EFI_Backend ** data = (AP_EFI_Backend**)luaL_checkudata(L, arg, "AP_EFI_Backend");
-    AP_EFI_Backend * ud = *data;
-    if (ud == NULL) {
-        // This error will never return, so there is no danger of returning a NULL
-        luaL_error(L, "Internal error, null pointer");
-    }
-    return data;
+    return (AP_EFI_Backend **)check_ap_object(L, arg, "AP_EFI_Backend");
 }
 #endif // (AP_EFI_SCRIPTING_ENABLED == 1)
 
 #if AP_SCRIPTING_CAN_SENSOR_ENABLED
 ScriptingCANBuffer ** check_ScriptingCANBuffer(lua_State *L, int arg) {
-    ScriptingCANBuffer ** data = (ScriptingCANBuffer**)luaL_checkudata(L, arg, "ScriptingCANBuffer");
-    ScriptingCANBuffer * ud = *data;
-    if (ud == NULL) {
-        // This error will never return, so there is no danger of returning a NULL
-        luaL_error(L, "Internal error, null pointer");
-    }
-    return data;
+    return (ScriptingCANBuffer **)check_ap_object(L, arg, "ScriptingCANBuffer");
 }
 #endif // AP_SCRIPTING_CAN_SENSOR_ENABLED
 
 AP_HAL::PWMSource ** check_AP_HAL__PWMSource(lua_State *L, int arg) {
-    AP_HAL::PWMSource ** data = (AP_HAL::PWMSource**)luaL_checkudata(L, arg, "AP_HAL::PWMSource");
-    AP_HAL::PWMSource * ud = *data;
-    if (ud == NULL) {
-        // This error will never return, so there is no danger of returning a NULL
-        luaL_error(L, "Internal error, null pointer");
-    }
-    return data;
+    return (AP_HAL::PWMSource **)check_ap_object(L, arg, "AP_HAL::PWMSource");
 }
 
 #if !defined(HAL_DISABLE_ADC_DRIVER)
 AP_HAL::AnalogSource ** check_AP_HAL__AnalogSource(lua_State *L, int arg) {
-    AP_HAL::AnalogSource ** data = (AP_HAL::AnalogSource**)luaL_checkudata(L, arg, "AP_HAL::AnalogSource");
-    AP_HAL::AnalogSource * ud = *data;
-    if (ud == NULL) {
-        // This error will never return, so there is no danger of returning a NULL
-        luaL_error(L, "Internal error, null pointer");
-    }
-    return data;
+    return (AP_HAL::AnalogSource **)check_ap_object(L, arg, "AP_HAL::AnalogSource");
 }
 #endif // !defined(HAL_DISABLE_ADC_DRIVER)
 
 #if (AP_NETWORKING_ENABLED==1)
 SocketAPM ** check_SocketAPM(lua_State *L, int arg) {
-    SocketAPM ** data = (SocketAPM**)luaL_checkudata(L, arg, "SocketAPM");
-    SocketAPM * ud = *data;
-    if (ud == NULL) {
-        // This error will never return, so there is no danger of returning a NULL
-        luaL_error(L, "Internal error, null pointer");
-    }
-    return data;
+    return (SocketAPM **)check_ap_object(L, arg, "SocketAPM");
 }
 #endif // (AP_NETWORKING_ENABLED==1)
 
 AP_HAL::I2CDevice ** check_AP_HAL__I2CDevice(lua_State *L, int arg) {
-    AP_HAL::I2CDevice ** data = (AP_HAL::I2CDevice**)luaL_checkudata(L, arg, "AP_HAL::I2CDevice");
-    AP_HAL::I2CDevice * ud = *data;
-    if (ud == NULL) {
-        // This error will never return, so there is no danger of returning a NULL
-        luaL_error(L, "Internal error, null pointer");
-    }
-    return data;
-}
-
-AP_HAL::UARTDriver ** check_AP_HAL__UARTDriver(lua_State *L, int arg) {
-    AP_HAL::UARTDriver ** data = (AP_HAL::UARTDriver**)luaL_checkudata(L, arg, "AP_HAL::UARTDriver");
-    AP_HAL::UARTDriver * ud = *data;
-    if (ud == NULL) {
-        // This error will never return, so there is no danger of returning a NULL
-        luaL_error(L, "Internal error, null pointer");
-    }
-    return data;
+    return (AP_HAL::I2CDevice **)check_ap_object(L, arg, "AP_HAL::I2CDevice");
 }
 
 #if AP_RC_CHANNEL_ENABLED
 RC_Channel ** check_RC_Channel(lua_State *L, int arg) {
-    RC_Channel ** data = (RC_Channel**)luaL_checkudata(L, arg, "RC_Channel");
-    RC_Channel * ud = *data;
-    if (ud == NULL) {
-        // This error will never return, so there is no danger of returning a NULL
-        luaL_error(L, "Internal error, null pointer");
-    }
-    return data;
+    return (RC_Channel **)check_ap_object(L, arg, "RC_Channel");
 }
 #endif // AP_RC_CHANNEL_ENABLED
 
-#if (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RANGEFINDER))
+#if AP_RANGEFINDER_ENABLED
 AP_RangeFinder_Backend ** check_AP_RangeFinder_Backend(lua_State *L, int arg) {
-    AP_RangeFinder_Backend ** data = (AP_RangeFinder_Backend**)luaL_checkudata(L, arg, "AP_RangeFinder_Backend");
-    AP_RangeFinder_Backend * ud = *data;
-    if (ud == NULL) {
-        // This error will never return, so there is no danger of returning a NULL
-        luaL_error(L, "Internal error, null pointer");
-    }
-    return data;
+    return (AP_RangeFinder_Backend **)check_ap_object(L, arg, "AP_RangeFinder_Backend");
 }
-#endif // (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RANGEFINDER))
+#endif // AP_RANGEFINDER_ENABLED
 
 #if HAL_PROXIMITY_ENABLED == 1
 AP_Proximity_Backend ** check_AP_Proximity_Backend(lua_State *L, int arg) {
-    AP_Proximity_Backend ** data = (AP_Proximity_Backend**)luaL_checkudata(L, arg, "AP_Proximity_Backend");
-    AP_Proximity_Backend * ud = *data;
-    if (ud == NULL) {
-        // This error will never return, so there is no danger of returning a NULL
-        luaL_error(L, "Internal error, null pointer");
-    }
-    return data;
+    return (AP_Proximity_Backend **)check_ap_object(L, arg, "AP_Proximity_Backend");
 }
 #endif // HAL_PROXIMITY_ENABLED == 1
+
+#if HAL_VISUALODOM_ENABLED
+AP_VisualOdom * check_AP_VisualOdom(lua_State *L) {
+    AP_VisualOdom * ud = AP_VisualOdom::get_singleton();
+    if (ud == nullptr) {
+        // This error will never return, so there is no danger of returning a nullptr
+        not_supported_error(L, 1, "visual_odom");
+    }
+    return ud;
+}
+#endif // HAL_VISUALODOM_ENABLED
 
 #if AP_NETWORKING_ENABLED
 AP_Networking * check_AP_Networking(lua_State *L) {
@@ -845,7 +811,7 @@ AP_EFI * check_AP_EFI(lua_State *L) {
 }
 #endif // (AP_EFI_SCRIPTING_ENABLED == 1)
 
-#if (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_MAG))
+#if AP_COMPASS_ENABLED
 Compass * check_Compass(lua_State *L) {
     Compass * ud = Compass::get_singleton();
     if (ud == nullptr) {
@@ -854,7 +820,7 @@ Compass * check_Compass(lua_State *L) {
     }
     return ud;
 }
-#endif // (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_MAG))
+#endif // AP_COMPASS_ENABLED
 
 #if HAL_WITH_IO_MCU
 AP_IOMCU * check_AP_IOMCU(lua_State *L) {
@@ -932,6 +898,17 @@ AC_AttitudeControl * check_AC_AttitudeControl(lua_State *L) {
     return ud;
 }
 #endif // APM_BUILD_TYPE(APM_BUILD_ArduPlane)||APM_BUILD_COPTER_OR_HELI
+
+#if AC_PRECLAND_ENABLED && (APM_BUILD_TYPE(APM_BUILD_ArduPlane)||APM_BUILD_COPTER_OR_HELI)
+AC_PrecLand * check_AC_PrecLand(lua_State *L) {
+    AC_PrecLand * ud = AC_PrecLand::get_singleton();
+    if (ud == nullptr) {
+        // This error will never return, so there is no danger of returning a nullptr
+        not_supported_error(L, 1, "precland");
+    }
+    return ud;
+}
+#endif // AC_PRECLAND_ENABLED && (APM_BUILD_TYPE(APM_BUILD_ArduPlane)||APM_BUILD_COPTER_OR_HELI)
 
 #if AP_FOLLOW_ENABLED && (APM_BUILD_TYPE(APM_BUILD_ArduPlane)||APM_BUILD_COPTER_OR_HELI)
 AP_Follow * check_AP_Follow(lua_State *L) {
@@ -1138,17 +1115,6 @@ AP_Baro * check_AP_Baro(lua_State *L) {
 }
 #endif // (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_BARO))
 
-#if HAL_GCS_ENABLED
-AP_SerialManager * check_AP_SerialManager(lua_State *L) {
-    AP_SerialManager * ud = AP_SerialManager::get_singleton();
-    if (ud == nullptr) {
-        // This error will never return, so there is no danger of returning a nullptr
-        not_supported_error(L, 1, "serial");
-    }
-    return ud;
-}
-#endif // HAL_GCS_ENABLED
-
 #if AP_RC_CHANNEL_ENABLED
 RC_Channels * check_RC_Channels(lua_State *L) {
     RC_Channels * ud = RC_Channels::get_singleton();
@@ -1237,7 +1203,7 @@ AP_Terrain * check_AP_Terrain(lua_State *L) {
 }
 #endif // defined(AP_TERRAIN_AVAILABLE) && AP_TERRAIN_AVAILABLE == 1
 
-#if (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RANGEFINDER))
+#if AP_RANGEFINDER_ENABLED
 RangeFinder * check_RangeFinder(lua_State *L) {
     RangeFinder * ud = RangeFinder::get_singleton();
     if (ud == nullptr) {
@@ -1246,7 +1212,7 @@ RangeFinder * check_RangeFinder(lua_State *L) {
     }
     return ud;
 }
-#endif // (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RANGEFINDER))
+#endif // AP_RANGEFINDER_ENABLED
 
 #if HAL_PROXIMITY_ENABLED == 1
 AP_Proximity * check_AP_Proximity(lua_State *L) {
@@ -1292,7 +1258,7 @@ AP_BattMonitor * check_AP_BattMonitor(lua_State *L) {
 }
 #endif // AP_BATTERY_ENABLED
 
-#if (!defined(HAL_BUILD_AP_PERIPH))
+#if AP_ARMING_ENABLED
 AP_Arming * check_AP_Arming(lua_State *L) {
     AP_Arming * ud = AP_Arming::get_singleton();
     if (ud == nullptr) {
@@ -1301,7 +1267,7 @@ AP_Arming * check_AP_Arming(lua_State *L) {
     }
     return ud;
 }
-#endif // (!defined(HAL_BUILD_AP_PERIPH))
+#endif // AP_ARMING_ENABLED
 
 #if AP_AHRS_ENABLED
 AP_AHRS * check_AP_AHRS(lua_State *L) {
@@ -1350,10 +1316,32 @@ static int AP__fwversion___fw_short_string(lua_State *L) {
     return 1;
 }
 
+#if HAL_VISUALODOM_ENABLED
+static int AP_VisualOdom_quality(lua_State *L) {
+    binding_argcheck(L, 1);
+    AP_VisualOdom * ud = check_AP_VisualOdom(L);
+    const int8_t data = static_cast<int8_t>(ud->quality());
+
+    lua_pushinteger(L, data);
+    return 1;
+}
+#endif // HAL_VISUALODOM_ENABLED
+
+#if HAL_VISUALODOM_ENABLED
+static int AP_VisualOdom_healthy(lua_State *L) {
+    binding_argcheck(L, 1);
+    AP_VisualOdom * ud = check_AP_VisualOdom(L);
+    const bool data = static_cast<bool>(ud->healthy());
+
+    lua_pushboolean(L, data);
+    return 1;
+}
+#endif // HAL_VISUALODOM_ENABLED
+
 #if AP_NETWORKING_ENABLED
 static int AP_Networking_address_to_str(lua_State *L) {
-    AP_Networking * ud = check_AP_Networking(L);
     binding_argcheck(L, 2);
+    AP_Networking * ud = check_AP_Networking(L);
     const uint32_t raw_data_2 = coerce_to_uint32_t(L, 2);
     const uint32_t data_2 = static_cast<uint32_t>(raw_data_2);
     const char * data = ud->address_to_str(
@@ -1366,44 +1354,41 @@ static int AP_Networking_address_to_str(lua_State *L) {
 
 #if AP_NETWORKING_ENABLED
 static int AP_Networking_get_gateway_active(lua_State *L) {
-    AP_Networking * ud = check_AP_Networking(L);
     binding_argcheck(L, 1);
+    AP_Networking * ud = check_AP_Networking(L);
     const uint32_t data = static_cast<uint32_t>(ud->get_gateway_active());
 
-        new_uint32_t(L);
-        *static_cast<uint32_t *>(luaL_checkudata(L, -1, "uint32_t")) = data;
+        *new_uint32_t(L) = data;
     return 1;
 }
 #endif // AP_NETWORKING_ENABLED
 
 #if AP_NETWORKING_ENABLED
 static int AP_Networking_get_netmask_active(lua_State *L) {
-    AP_Networking * ud = check_AP_Networking(L);
     binding_argcheck(L, 1);
+    AP_Networking * ud = check_AP_Networking(L);
     const uint32_t data = static_cast<uint32_t>(ud->get_netmask_active());
 
-        new_uint32_t(L);
-        *static_cast<uint32_t *>(luaL_checkudata(L, -1, "uint32_t")) = data;
+        *new_uint32_t(L) = data;
     return 1;
 }
 #endif // AP_NETWORKING_ENABLED
 
 #if AP_NETWORKING_ENABLED
 static int AP_Networking_get_ip_active(lua_State *L) {
-    AP_Networking * ud = check_AP_Networking(L);
     binding_argcheck(L, 1);
+    AP_Networking * ud = check_AP_Networking(L);
     const uint32_t data = static_cast<uint32_t>(ud->get_ip_active());
 
-        new_uint32_t(L);
-        *static_cast<uint32_t *>(luaL_checkudata(L, -1, "uint32_t")) = data;
+        *new_uint32_t(L) = data;
     return 1;
 }
 #endif // AP_NETWORKING_ENABLED
 
 #if AP_RTC_ENABLED
 static int AP_RTC_date_fields_to_clock_s(lua_State *L) {
-    AP_RTC * ud = check_AP_RTC(L);
     binding_argcheck(L, 7);
+    AP_RTC * ud = check_AP_RTC(L);
     const uint16_t raw_data_2 = get_uint16_t(L, 2);
     const uint16_t data_2 = static_cast<uint16_t>(raw_data_2);
     const int8_t raw_data_3 = get_int8_t(L, 3);
@@ -1424,16 +1409,15 @@ static int AP_RTC_date_fields_to_clock_s(lua_State *L) {
             data_6,
             data_7));
 
-        new_uint32_t(L);
-        *static_cast<uint32_t *>(luaL_checkudata(L, -1, "uint32_t")) = data;
+        *new_uint32_t(L) = data;
     return 1;
 }
 #endif // AP_RTC_ENABLED
 
 #if AP_RTC_ENABLED
 static int AP_RTC_clock_s_to_date_fields(lua_State *L) {
-    AP_RTC * ud = check_AP_RTC(L);
     binding_argcheck(L, 2);
+    AP_RTC * ud = check_AP_RTC(L);
     const uint32_t raw_data_2 = coerce_to_uint32_t(L, 2);
     const uint32_t data_2 = static_cast<uint32_t>(raw_data_2);
     uint16_t data_5003 {};
@@ -1454,6 +1438,10 @@ static int AP_RTC_clock_s_to_date_fields(lua_State *L) {
             data_5009));
 
     if (data) {
+#if 8 > LUA_MINSTACK
+        luaL_checkstack(L, 8, nullptr);
+#endif
+
         lua_pushinteger(L, data_5003);
         lua_pushinteger(L, data_5004);
         lua_pushinteger(L, data_5005);
@@ -1468,8 +1456,8 @@ static int AP_RTC_clock_s_to_date_fields(lua_State *L) {
 #endif // AP_RTC_ENABLED
 
 static int AP_Filesystem_crc32(lua_State *L) {
-    AP_Filesystem * ud = check_AP_Filesystem(L);
     binding_argcheck(L, 2);
+    AP_Filesystem * ud = check_AP_Filesystem(L);
     const char * data_2 = luaL_checkstring(L, 2);
     uint32_t data_5003 {};
     const bool data = static_cast<bool>(ud->crc32(
@@ -1477,8 +1465,11 @@ static int AP_Filesystem_crc32(lua_State *L) {
             data_5003));
 
     if (data) {
-        new_uint32_t(L);
-        *static_cast<uint32_t *>(luaL_checkudata(L, -1, "uint32_t")) = data_5003;
+#if 2 > LUA_MINSTACK
+        luaL_checkstack(L, 2, nullptr);
+#endif
+
+        *new_uint32_t(L) = data_5003;
         return 1;
     }
     return 0;
@@ -1486,8 +1477,8 @@ static int AP_Filesystem_crc32(lua_State *L) {
 
 #if AP_FILESYSTEM_FORMAT_ENABLED
 static int AP_Filesystem_get_format_status(lua_State *L) {
-    AP_Filesystem * ud = check_AP_Filesystem(L);
     binding_argcheck(L, 1);
+    AP_Filesystem * ud = check_AP_Filesystem(L);
     const uint8_t data = static_cast<uint8_t>(ud->get_format_status());
 
     lua_pushinteger(L, data);
@@ -1497,8 +1488,8 @@ static int AP_Filesystem_get_format_status(lua_State *L) {
 
 #if AP_FILESYSTEM_FORMAT_ENABLED
 static int AP_Filesystem_format(lua_State *L) {
-    AP_Filesystem * ud = check_AP_Filesystem(L);
     binding_argcheck(L, 1);
+    AP_Filesystem * ud = check_AP_Filesystem(L);
     const bool data = static_cast<bool>(ud->format());
 
     lua_pushboolean(L, data);
@@ -1507,8 +1498,8 @@ static int AP_Filesystem_format(lua_State *L) {
 #endif // AP_FILESYSTEM_FORMAT_ENABLED
 
 static int AP_Filesystem_stat(lua_State *L) {
-    AP_Filesystem * ud = check_AP_Filesystem(L);
     binding_argcheck(L, 2);
+    AP_Filesystem * ud = check_AP_Filesystem(L);
     const char * data_2 = luaL_checkstring(L, 2);
     AP_Filesystem::stat_t data_5003 {};
     const bool data = static_cast<bool>(ud->stat(
@@ -1516,8 +1507,11 @@ static int AP_Filesystem_stat(lua_State *L) {
             data_5003));
 
     if (data) {
-        new_AP_Filesystem__stat_t(L);
-        *check_AP_Filesystem__stat_t(L, -1) = data_5003;
+#if 2 > LUA_MINSTACK
+        luaL_checkstack(L, 2, nullptr);
+#endif
+
+        *new_AP_Filesystem__stat_t(L) = data_5003;
         return 1;
     }
     return 0;
@@ -1525,20 +1519,19 @@ static int AP_Filesystem_stat(lua_State *L) {
 
 #if AP_FENCE_ENABLED
 static int AC_Fence_get_breach_time(lua_State *L) {
-    AC_Fence * ud = check_AC_Fence(L);
     binding_argcheck(L, 1);
+    AC_Fence * ud = check_AC_Fence(L);
     const uint32_t data = static_cast<uint32_t>(ud->get_breach_time());
 
-        new_uint32_t(L);
-        *static_cast<uint32_t *>(luaL_checkudata(L, -1, "uint32_t")) = data;
+        *new_uint32_t(L) = data;
     return 1;
 }
 #endif // AP_FENCE_ENABLED
 
 #if AP_FENCE_ENABLED
 static int AC_Fence_get_breaches(lua_State *L) {
-    AC_Fence * ud = check_AC_Fence(L);
     binding_argcheck(L, 1);
+    AC_Fence * ud = check_AC_Fence(L);
     const uint8_t data = static_cast<uint8_t>(ud->get_breaches());
 
     lua_pushinteger(L, data);
@@ -1549,8 +1542,8 @@ static int AC_Fence_get_breaches(lua_State *L) {
 #if HAL_LOGGING_ENABLED
 #if HAL_LOGGER_FILE_CONTENTS_ENABLED
 static int AP_Logger_log_file_content(lua_State *L) {
-    AP_Logger * ud = check_AP_Logger(L);
     binding_argcheck(L, 2);
+    AP_Logger * ud = check_AP_Logger(L);
     const char * data_2 = luaL_checkstring(L, 2);
     ud->log_file_content(
             data_2);
@@ -1561,23 +1554,37 @@ static int AP_Logger_log_file_content(lua_State *L) {
 #endif // HAL_LOGGING_ENABLED
 
 #if (AP_EFI_SCRIPTING_ENABLED == 1)
-static int AP_EFI_get_state(lua_State *L) {
-    AP_EFI * ud = check_AP_EFI(L);
+static int AP_EFI_get_last_update_ms(lua_State *L) {
     binding_argcheck(L, 1);
+    AP_EFI * ud = check_AP_EFI(L);
+    const uint32_t data = static_cast<uint32_t>(ud->get_last_update_ms());
+
+        *new_uint32_t(L) = data;
+    return 1;
+}
+#endif // (AP_EFI_SCRIPTING_ENABLED == 1)
+
+#if (AP_EFI_SCRIPTING_ENABLED == 1)
+static int AP_EFI_get_state(lua_State *L) {
+    binding_argcheck(L, 1);
+    AP_EFI * ud = check_AP_EFI(L);
     EFI_State data_5002 {};
     ud->get_state(
             data_5002);
 
-    new_EFI_State(L);
-    *check_EFI_State(L, -1) = data_5002;
+#if 2 > LUA_MINSTACK
+    luaL_checkstack(L, 2, nullptr);
+#endif
+
+    *new_EFI_State(L) = data_5002;
     return 1;
 }
 #endif // (AP_EFI_SCRIPTING_ENABLED == 1)
 
 #if (AP_EFI_SCRIPTING_ENABLED == 1)
 static int AP_EFI_get_backend(lua_State *L) {
-    AP_EFI * ud = check_AP_EFI(L);
     binding_argcheck(L, 2);
+    AP_EFI * ud = check_AP_EFI(L);
     const uint8_t raw_data_2 = get_uint8_t(L, 2);
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     AP_EFI_Backend *data = ud->get_backend(
@@ -1586,16 +1593,15 @@ static int AP_EFI_get_backend(lua_State *L) {
     if (data == NULL) {
         return 0;
     }
-    new_AP_EFI_Backend(L);
-    *(AP_EFI_Backend**)luaL_checkudata(L, -1, "AP_EFI_Backend") = data;
+    *new_AP_EFI_Backend(L) = data;
     return 1;
 }
 #endif // (AP_EFI_SCRIPTING_ENABLED == 1)
 
-#if (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_MAG))
+#if AP_COMPASS_ENABLED
 static int Compass_healthy(lua_State *L) {
-    Compass * ud = check_Compass(L);
     binding_argcheck(L, 2);
+    Compass * ud = check_Compass(L);
     const uint8_t raw_data_2 = get_uint8_t(L, 2);
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     const bool data = static_cast<bool>(ud->healthy(
@@ -1604,12 +1610,12 @@ static int Compass_healthy(lua_State *L) {
     lua_pushboolean(L, data);
     return 1;
 }
-#endif // (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_MAG))
+#endif // AP_COMPASS_ENABLED
 
 #if HAL_WITH_IO_MCU
 static int AP_IOMCU_healthy(lua_State *L) {
-    AP_IOMCU * ud = check_AP_IOMCU(L);
     binding_argcheck(L, 1);
+    AP_IOMCU * ud = check_AP_IOMCU(L);
     const bool data = static_cast<bool>(ud->healthy());
 
     lua_pushboolean(L, data);
@@ -1619,8 +1625,8 @@ static int AP_IOMCU_healthy(lua_State *L) {
 
 #if AP_WINCH_ENABLED && APM_BUILD_COPTER_OR_HELI
 static int AP_Winch_get_rate_max(lua_State *L) {
-    AP_Winch * ud = check_AP_Winch(L);
     binding_argcheck(L, 1);
+    AP_Winch * ud = check_AP_Winch(L);
     const float data = static_cast<float>(ud->get_rate_max());
 
     lua_pushnumber(L, data);
@@ -1630,8 +1636,8 @@ static int AP_Winch_get_rate_max(lua_State *L) {
 
 #if AP_WINCH_ENABLED && APM_BUILD_COPTER_OR_HELI
 static int AP_Winch_set_desired_rate(lua_State *L) {
-    AP_Winch * ud = check_AP_Winch(L);
     binding_argcheck(L, 2);
+    AP_Winch * ud = check_AP_Winch(L);
     const float raw_data_2 = luaL_checknumber(L, 2);
     const float data_2 = raw_data_2;
     ud->set_desired_rate(
@@ -1643,8 +1649,8 @@ static int AP_Winch_set_desired_rate(lua_State *L) {
 
 #if AP_WINCH_ENABLED && APM_BUILD_COPTER_OR_HELI
 static int AP_Winch_release_length(lua_State *L) {
-    AP_Winch * ud = check_AP_Winch(L);
     binding_argcheck(L, 2);
+    AP_Winch * ud = check_AP_Winch(L);
     const float raw_data_2 = luaL_checknumber(L, 2);
     const float data_2 = raw_data_2;
     ud->release_length(
@@ -1656,8 +1662,8 @@ static int AP_Winch_release_length(lua_State *L) {
 
 #if AP_WINCH_ENABLED && APM_BUILD_COPTER_OR_HELI
 static int AP_Winch_relax(lua_State *L) {
-    AP_Winch * ud = check_AP_Winch(L);
     binding_argcheck(L, 1);
+    AP_Winch * ud = check_AP_Winch(L);
     ud->relax();
 
     return 0;
@@ -1666,8 +1672,8 @@ static int AP_Winch_relax(lua_State *L) {
 
 #if AP_WINCH_ENABLED && APM_BUILD_COPTER_OR_HELI
 static int AP_Winch_healthy(lua_State *L) {
-    AP_Winch * ud = check_AP_Winch(L);
     binding_argcheck(L, 1);
+    AP_Winch * ud = check_AP_Winch(L);
     const bool data = static_cast<bool>(ud->healthy());
 
     lua_pushboolean(L, data);
@@ -1677,8 +1683,8 @@ static int AP_Winch_healthy(lua_State *L) {
 
 #if AP_CAMERA_ENABLED && (AP_CAMERA_SCRIPTING_ENABLED == 1)
 static int AP_Camera_get_state(lua_State *L) {
-    AP_Camera * ud = check_AP_Camera(L);
     binding_argcheck(L, 2);
+    AP_Camera * ud = check_AP_Camera(L);
     const uint8_t raw_data_2 = get_uint8_t(L, 2);
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     AP_Camera::camera_state_t data_5003 {};
@@ -1689,8 +1695,11 @@ static int AP_Camera_get_state(lua_State *L) {
 
     ud->get_semaphore().give();
     if (data) {
-        new_AP_Camera__camera_state_t(L);
-        *check_AP_Camera__camera_state_t(L, -1) = data_5003;
+#if 2 > LUA_MINSTACK
+        luaL_checkstack(L, 2, nullptr);
+#endif
+
+        *new_AP_Camera__camera_state_t(L) = data_5003;
         return 1;
     }
     return 0;
@@ -1699,8 +1708,8 @@ static int AP_Camera_get_state(lua_State *L) {
 
 #if AP_CAMERA_ENABLED && (AP_CAMERA_SCRIPTING_ENABLED == 1)
 static int AP_Camera_set_trigger_distance(lua_State *L) {
-    AP_Camera * ud = check_AP_Camera(L);
     binding_argcheck(L, 3);
+    AP_Camera * ud = check_AP_Camera(L);
     const uint8_t raw_data_2 = get_uint8_t(L, 2);
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     const float raw_data_3 = luaL_checknumber(L, 3);
@@ -1717,8 +1726,8 @@ static int AP_Camera_set_trigger_distance(lua_State *L) {
 
 #if AP_CAMERA_ENABLED && (AP_CAMERA_SCRIPTING_ENABLED == 1)
 static int AP_Camera_record_video(lua_State *L) {
-    AP_Camera * ud = check_AP_Camera(L);
     binding_argcheck(L, 3);
+    AP_Camera * ud = check_AP_Camera(L);
     const uint8_t raw_data_2 = get_uint8_t(L, 2);
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     const bool data_3 = static_cast<bool>(lua_toboolean(L, 3));
@@ -1735,8 +1744,8 @@ static int AP_Camera_record_video(lua_State *L) {
 
 #if AP_CAMERA_ENABLED && (AP_CAMERA_SCRIPTING_ENABLED == 1)
 static int AP_Camera_take_picture(lua_State *L) {
-    AP_Camera * ud = check_AP_Camera(L);
     binding_argcheck(L, 2);
+    AP_Camera * ud = check_AP_Camera(L);
     const uint8_t raw_data_2 = get_uint8_t(L, 2);
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     ud->get_semaphore().take_blocking();
@@ -1750,8 +1759,8 @@ static int AP_Camera_take_picture(lua_State *L) {
 
 #if HAL_MOUNT_ENABLED == 1
 static int AP_Mount_set_attitude_euler(lua_State *L) {
-    AP_Mount * ud = check_AP_Mount(L);
     binding_argcheck(L, 5);
+    AP_Mount * ud = check_AP_Mount(L);
     const uint8_t raw_data_2 = get_uint8_t(L, 2);
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     const float raw_data_3 = luaL_checknumber(L, 3);
@@ -1772,8 +1781,8 @@ static int AP_Mount_set_attitude_euler(lua_State *L) {
 
 #if HAL_MOUNT_ENABLED == 1
 static int AP_Mount_get_location_target(lua_State *L) {
-    AP_Mount * ud = check_AP_Mount(L);
     binding_argcheck(L, 2);
+    AP_Mount * ud = check_AP_Mount(L);
     const uint8_t raw_data_2 = get_uint8_t(L, 2);
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     Location data_5003 {};
@@ -1782,8 +1791,11 @@ static int AP_Mount_get_location_target(lua_State *L) {
             data_5003));
 
     if (data) {
-        new_Location(L);
-        *check_Location(L, -1) = data_5003;
+#if 2 > LUA_MINSTACK
+        luaL_checkstack(L, 2, nullptr);
+#endif
+
+        *new_Location(L) = data_5003;
         return 1;
     }
     return 0;
@@ -1792,8 +1804,8 @@ static int AP_Mount_get_location_target(lua_State *L) {
 
 #if HAL_MOUNT_ENABLED == 1
 static int AP_Mount_get_angle_target(lua_State *L) {
-    AP_Mount * ud = check_AP_Mount(L);
     binding_argcheck(L, 2);
+    AP_Mount * ud = check_AP_Mount(L);
     const uint8_t raw_data_2 = get_uint8_t(L, 2);
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     float data_5003 {};
@@ -1808,6 +1820,10 @@ static int AP_Mount_get_angle_target(lua_State *L) {
             data_5006));
 
     if (data) {
+#if 5 > LUA_MINSTACK
+        luaL_checkstack(L, 5, nullptr);
+#endif
+
         lua_pushnumber(L, data_5003);
         lua_pushnumber(L, data_5004);
         lua_pushnumber(L, data_5005);
@@ -1820,8 +1836,8 @@ static int AP_Mount_get_angle_target(lua_State *L) {
 
 #if HAL_MOUNT_ENABLED == 1
 static int AP_Mount_get_rate_target(lua_State *L) {
-    AP_Mount * ud = check_AP_Mount(L);
     binding_argcheck(L, 2);
+    AP_Mount * ud = check_AP_Mount(L);
     const uint8_t raw_data_2 = get_uint8_t(L, 2);
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     float data_5003 {};
@@ -1836,6 +1852,10 @@ static int AP_Mount_get_rate_target(lua_State *L) {
             data_5006));
 
     if (data) {
+#if 5 > LUA_MINSTACK
+        luaL_checkstack(L, 5, nullptr);
+#endif
+
         lua_pushnumber(L, data_5003);
         lua_pushnumber(L, data_5004);
         lua_pushnumber(L, data_5005);
@@ -1848,8 +1868,8 @@ static int AP_Mount_get_rate_target(lua_State *L) {
 
 #if HAL_MOUNT_ENABLED == 1
 static int AP_Mount_get_attitude_euler(lua_State *L) {
-    AP_Mount * ud = check_AP_Mount(L);
     binding_argcheck(L, 2);
+    AP_Mount * ud = check_AP_Mount(L);
     const uint8_t raw_data_2 = get_uint8_t(L, 2);
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     float data_5003 {};
@@ -1862,6 +1882,10 @@ static int AP_Mount_get_attitude_euler(lua_State *L) {
             data_5005));
 
     if (data) {
+#if 4 > LUA_MINSTACK
+        luaL_checkstack(L, 4, nullptr);
+#endif
+
         lua_pushnumber(L, data_5003);
         lua_pushnumber(L, data_5004);
         lua_pushnumber(L, data_5005);
@@ -1873,8 +1897,8 @@ static int AP_Mount_get_attitude_euler(lua_State *L) {
 
 #if HAL_MOUNT_ENABLED == 1
 static int AP_Mount_set_roi_target(lua_State *L) {
-    AP_Mount * ud = check_AP_Mount(L);
     binding_argcheck(L, 3);
+    AP_Mount * ud = check_AP_Mount(L);
     const uint8_t raw_data_2 = get_uint8_t(L, 2);
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     Location & data_3 = *check_Location(L, 3);
@@ -1888,8 +1912,8 @@ static int AP_Mount_set_roi_target(lua_State *L) {
 
 #if HAL_MOUNT_ENABLED == 1
 static int AP_Mount_set_rate_target(lua_State *L) {
-    AP_Mount * ud = check_AP_Mount(L);
     binding_argcheck(L, 6);
+    AP_Mount * ud = check_AP_Mount(L);
     const uint8_t raw_data_2 = get_uint8_t(L, 2);
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     const float raw_data_3 = luaL_checknumber(L, 3);
@@ -1912,8 +1936,8 @@ static int AP_Mount_set_rate_target(lua_State *L) {
 
 #if HAL_MOUNT_ENABLED == 1
 static int AP_Mount_set_angle_target(lua_State *L) {
-    AP_Mount * ud = check_AP_Mount(L);
     binding_argcheck(L, 6);
+    AP_Mount * ud = check_AP_Mount(L);
     const uint8_t raw_data_2 = get_uint8_t(L, 2);
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     const float raw_data_3 = luaL_checknumber(L, 3);
@@ -1936,8 +1960,8 @@ static int AP_Mount_set_angle_target(lua_State *L) {
 
 #if HAL_MOUNT_ENABLED == 1
 static int AP_Mount_set_mode(lua_State *L) {
-    AP_Mount * ud = check_AP_Mount(L);
     binding_argcheck(L, 3);
+    AP_Mount * ud = check_AP_Mount(L);
     const uint8_t raw_data_2 = get_uint8_t(L, 2);
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     const lua_Integer raw_data_3 = get_integer(L, 3, static_cast<int32_t>(MAV_MOUNT_MODE_RETRACT), static_cast<int32_t>(MAV_MOUNT_MODE_HOME_LOCATION));
@@ -1952,8 +1976,8 @@ static int AP_Mount_set_mode(lua_State *L) {
 
 #if HAL_MOUNT_ENABLED == 1
 static int AP_Mount_get_mode(lua_State *L) {
-    AP_Mount * ud = check_AP_Mount(L);
     binding_argcheck(L, 2);
+    AP_Mount * ud = check_AP_Mount(L);
     const uint8_t raw_data_2 = get_uint8_t(L, 2);
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     const MAV_MOUNT_MODE &data = ud->get_mode(
@@ -1966,11 +1990,15 @@ static int AP_Mount_get_mode(lua_State *L) {
 
 #if APM_BUILD_TYPE(APM_BUILD_Rover)
 static int AR_PosControl_get_srate(lua_State *L) {
-    AR_PosControl * ud = check_AR_PosControl(L);
     binding_argcheck(L, 1);
+    AR_PosControl * ud = check_AR_PosControl(L);
     float data_5002 {};
     ud->get_srate(
             data_5002);
+
+#if 2 > LUA_MINSTACK
+    luaL_checkstack(L, 2, nullptr);
+#endif
 
     lua_pushnumber(L, data_5002);
     return 1;
@@ -1979,13 +2007,17 @@ static int AR_PosControl_get_srate(lua_State *L) {
 
 #if APM_BUILD_TYPE(APM_BUILD_Rover)
 static int AR_AttitudeControl_get_srate(lua_State *L) {
-    AR_AttitudeControl * ud = check_AR_AttitudeControl(L);
     binding_argcheck(L, 1);
+    AR_AttitudeControl * ud = check_AR_AttitudeControl(L);
     float data_5002 {};
     float data_5003 {};
     ud->get_srate(
             data_5002,
             data_5003);
+
+#if 3 > LUA_MINSTACK
+    luaL_checkstack(L, 3, nullptr);
+#endif
 
     lua_pushnumber(L, data_5002);
     lua_pushnumber(L, data_5003);
@@ -1995,8 +2027,8 @@ static int AR_AttitudeControl_get_srate(lua_State *L) {
 
 #if APM_BUILD_TYPE(APM_BUILD_ArduPlane)||APM_BUILD_COPTER_OR_HELI
 static int AC_AttitudeControl_get_rpy_srate(lua_State *L) {
-    AC_AttitudeControl * ud = check_AC_AttitudeControl(L);
     binding_argcheck(L, 1);
+    AC_AttitudeControl * ud = check_AC_AttitudeControl(L);
     float data_5002 {};
     float data_5003 {};
     float data_5004 {};
@@ -2005,6 +2037,10 @@ static int AC_AttitudeControl_get_rpy_srate(lua_State *L) {
             data_5003,
             data_5004);
 
+#if 4 > LUA_MINSTACK
+    luaL_checkstack(L, 4, nullptr);
+#endif
+
     lua_pushnumber(L, data_5002);
     lua_pushnumber(L, data_5003);
     lua_pushnumber(L, data_5004);
@@ -2012,15 +2048,92 @@ static int AC_AttitudeControl_get_rpy_srate(lua_State *L) {
 }
 #endif // APM_BUILD_TYPE(APM_BUILD_ArduPlane)||APM_BUILD_COPTER_OR_HELI
 
+#if AC_PRECLAND_ENABLED && (APM_BUILD_TYPE(APM_BUILD_ArduPlane)||APM_BUILD_COPTER_OR_HELI)
+static int AC_PrecLand_get_target_location(lua_State *L) {
+    binding_argcheck(L, 1);
+    AC_PrecLand * ud = check_AC_PrecLand(L);
+    Location data_5002 {};
+    const bool data = static_cast<bool>(ud->get_target_location(
+            data_5002));
+
+    if (data) {
+#if 2 > LUA_MINSTACK
+        luaL_checkstack(L, 2, nullptr);
+#endif
+
+        *new_Location(L) = data_5002;
+        return 1;
+    }
+    return 0;
+}
+#endif // AC_PRECLAND_ENABLED && (APM_BUILD_TYPE(APM_BUILD_ArduPlane)||APM_BUILD_COPTER_OR_HELI)
+
+#if AC_PRECLAND_ENABLED && (APM_BUILD_TYPE(APM_BUILD_ArduPlane)||APM_BUILD_COPTER_OR_HELI)
+static int AC_PrecLand_get_target_velocity(lua_State *L) {
+    binding_argcheck(L, 1);
+    AC_PrecLand * ud = check_AC_PrecLand(L);
+    Vector2f data_5002 {};
+    const bool data = static_cast<bool>(ud->get_target_velocity(
+            data_5002));
+
+    if (data) {
+#if 2 > LUA_MINSTACK
+        luaL_checkstack(L, 2, nullptr);
+#endif
+
+        *new_Vector2f(L) = data_5002;
+        return 1;
+    }
+    return 0;
+}
+#endif // AC_PRECLAND_ENABLED && (APM_BUILD_TYPE(APM_BUILD_ArduPlane)||APM_BUILD_COPTER_OR_HELI)
+
+#if AC_PRECLAND_ENABLED && (APM_BUILD_TYPE(APM_BUILD_ArduPlane)||APM_BUILD_COPTER_OR_HELI)
+static int AC_PrecLand_get_last_valid_target_ms(lua_State *L) {
+    binding_argcheck(L, 1);
+    AC_PrecLand * ud = check_AC_PrecLand(L);
+    const uint32_t data = static_cast<uint32_t>(ud->get_last_valid_target_ms());
+
+        *new_uint32_t(L) = data;
+    return 1;
+}
+#endif // AC_PRECLAND_ENABLED && (APM_BUILD_TYPE(APM_BUILD_ArduPlane)||APM_BUILD_COPTER_OR_HELI)
+
+#if AC_PRECLAND_ENABLED && (APM_BUILD_TYPE(APM_BUILD_ArduPlane)||APM_BUILD_COPTER_OR_HELI)
+static int AC_PrecLand_target_acquired(lua_State *L) {
+    binding_argcheck(L, 1);
+    AC_PrecLand * ud = check_AC_PrecLand(L);
+    const bool data = static_cast<bool>(ud->target_acquired());
+
+    lua_pushboolean(L, data);
+    return 1;
+}
+#endif // AC_PRECLAND_ENABLED && (APM_BUILD_TYPE(APM_BUILD_ArduPlane)||APM_BUILD_COPTER_OR_HELI)
+
+#if AC_PRECLAND_ENABLED && (APM_BUILD_TYPE(APM_BUILD_ArduPlane)||APM_BUILD_COPTER_OR_HELI)
+static int AC_PrecLand_healthy(lua_State *L) {
+    binding_argcheck(L, 1);
+    AC_PrecLand * ud = check_AC_PrecLand(L);
+    const bool data = static_cast<bool>(ud->healthy());
+
+    lua_pushboolean(L, data);
+    return 1;
+}
+#endif // AC_PRECLAND_ENABLED && (APM_BUILD_TYPE(APM_BUILD_ArduPlane)||APM_BUILD_COPTER_OR_HELI)
+
 #if AP_FOLLOW_ENABLED && (APM_BUILD_TYPE(APM_BUILD_ArduPlane)||APM_BUILD_COPTER_OR_HELI)
 static int AP_Follow_get_target_heading_deg(lua_State *L) {
-    AP_Follow * ud = check_AP_Follow(L);
     binding_argcheck(L, 1);
+    AP_Follow * ud = check_AP_Follow(L);
     float data_5002 {};
     const bool data = static_cast<bool>(ud->get_target_heading_deg(
             data_5002));
 
     if (data) {
+#if 2 > LUA_MINSTACK
+        luaL_checkstack(L, 2, nullptr);
+#endif
+
         lua_pushnumber(L, data_5002);
         return 1;
     }
@@ -2030,8 +2143,8 @@ static int AP_Follow_get_target_heading_deg(lua_State *L) {
 
 #if AP_FOLLOW_ENABLED && (APM_BUILD_TYPE(APM_BUILD_ArduPlane)||APM_BUILD_COPTER_OR_HELI)
 static int AP_Follow_get_target_location_and_velocity_ofs(lua_State *L) {
-    AP_Follow * ud = check_AP_Follow(L);
     binding_argcheck(L, 1);
+    AP_Follow * ud = check_AP_Follow(L);
     Location data_5002 {};
     Vector3f data_5003 {};
     const bool data = static_cast<bool>(ud->get_target_location_and_velocity_ofs(
@@ -2039,10 +2152,12 @@ static int AP_Follow_get_target_location_and_velocity_ofs(lua_State *L) {
             data_5003));
 
     if (data) {
-        new_Location(L);
-        *check_Location(L, -1) = data_5002;
-        new_Vector3f(L);
-        *check_Vector3f(L, -1) = data_5003;
+#if 3 > LUA_MINSTACK
+        luaL_checkstack(L, 3, nullptr);
+#endif
+
+        *new_Location(L) = data_5002;
+        *new_Vector3f(L) = data_5003;
         return 2;
     }
     return 0;
@@ -2051,8 +2166,8 @@ static int AP_Follow_get_target_location_and_velocity_ofs(lua_State *L) {
 
 #if AP_FOLLOW_ENABLED && (APM_BUILD_TYPE(APM_BUILD_ArduPlane)||APM_BUILD_COPTER_OR_HELI)
 static int AP_Follow_get_target_location_and_velocity(lua_State *L) {
-    AP_Follow * ud = check_AP_Follow(L);
     binding_argcheck(L, 1);
+    AP_Follow * ud = check_AP_Follow(L);
     Location data_5002 {};
     Vector3f data_5003 {};
     const bool data = static_cast<bool>(ud->get_target_location_and_velocity(
@@ -2060,10 +2175,12 @@ static int AP_Follow_get_target_location_and_velocity(lua_State *L) {
             data_5003));
 
     if (data) {
-        new_Location(L);
-        *check_Location(L, -1) = data_5002;
-        new_Vector3f(L);
-        *check_Vector3f(L, -1) = data_5003;
+#if 3 > LUA_MINSTACK
+        luaL_checkstack(L, 3, nullptr);
+#endif
+
+        *new_Location(L) = data_5002;
+        *new_Vector3f(L) = data_5003;
         return 2;
     }
     return 0;
@@ -2072,20 +2189,19 @@ static int AP_Follow_get_target_location_and_velocity(lua_State *L) {
 
 #if AP_FOLLOW_ENABLED && (APM_BUILD_TYPE(APM_BUILD_ArduPlane)||APM_BUILD_COPTER_OR_HELI)
 static int AP_Follow_get_last_update_ms(lua_State *L) {
-    AP_Follow * ud = check_AP_Follow(L);
     binding_argcheck(L, 1);
+    AP_Follow * ud = check_AP_Follow(L);
     const uint32_t data = static_cast<uint32_t>(ud->get_last_update_ms());
 
-        new_uint32_t(L);
-        *static_cast<uint32_t *>(luaL_checkudata(L, -1, "uint32_t")) = data;
+        *new_uint32_t(L) = data;
     return 1;
 }
 #endif // AP_FOLLOW_ENABLED && (APM_BUILD_TYPE(APM_BUILD_ArduPlane)||APM_BUILD_COPTER_OR_HELI)
 
 #if AP_FOLLOW_ENABLED && (APM_BUILD_TYPE(APM_BUILD_ArduPlane)||APM_BUILD_COPTER_OR_HELI)
 static int AP_Follow_have_target(lua_State *L) {
-    AP_Follow * ud = check_AP_Follow(L);
     binding_argcheck(L, 1);
+    AP_Follow * ud = check_AP_Follow(L);
     const bool data = static_cast<bool>(ud->have_target());
 
     lua_pushboolean(L, data);
@@ -2245,8 +2361,8 @@ static int AP__motors___set_frame_string(lua_State *L) {
 
 #if defined(HAL_BUILD_AP_PERIPH)
 static int AP_Periph_FW_reboot(lua_State *L) {
-    AP_Periph_FW * ud = check_AP_Periph_FW(L);
     binding_argcheck(L, 2);
+    AP_Periph_FW * ud = check_AP_Periph_FW(L);
     const bool data_2 = static_cast<bool>(lua_toboolean(L, 2));
     ud->reboot(
             data_2);
@@ -2257,8 +2373,8 @@ static int AP_Periph_FW_reboot(lua_State *L) {
 
 #if defined(HAL_BUILD_AP_PERIPH)
 static int AP_Periph_FW_can_printf(lua_State *L) {
-    AP_Periph_FW * ud = check_AP_Periph_FW(L);
     binding_argcheck(L, 2);
+    AP_Periph_FW * ud = check_AP_Periph_FW(L);
     const char * data_2 = luaL_checkstring(L, 2);
     ud->can_printf(
             "%s",
@@ -2270,20 +2386,19 @@ static int AP_Periph_FW_can_printf(lua_State *L) {
 
 #if defined(HAL_BUILD_AP_PERIPH)
 static int AP_Periph_FW_get_vehicle_state(lua_State *L) {
-    AP_Periph_FW * ud = check_AP_Periph_FW(L);
     binding_argcheck(L, 1);
+    AP_Periph_FW * ud = check_AP_Periph_FW(L);
     const uint32_t data = static_cast<uint32_t>(ud->get_vehicle_state());
 
-        new_uint32_t(L);
-        *static_cast<uint32_t *>(luaL_checkudata(L, -1, "uint32_t")) = data;
+        *new_uint32_t(L) = data;
     return 1;
 }
 #endif // defined(HAL_BUILD_AP_PERIPH)
 
 #if defined(HAL_BUILD_AP_PERIPH)
 static int AP_Periph_FW_get_yaw_earth(lua_State *L) {
-    AP_Periph_FW * ud = check_AP_Periph_FW(L);
     binding_argcheck(L, 1);
+    AP_Periph_FW * ud = check_AP_Periph_FW(L);
     const float data = static_cast<float>(ud->get_yaw_earth());
 
     lua_pushnumber(L, data);
@@ -2293,8 +2408,8 @@ static int AP_Periph_FW_get_yaw_earth(lua_State *L) {
 
 #if AP_INERTIALSENSOR_ENABLED
 static int AP_InertialSensor_gyros_consistent(lua_State *L) {
-    AP_InertialSensor * ud = check_AP_InertialSensor(L);
     binding_argcheck(L, 2);
+    AP_InertialSensor * ud = check_AP_InertialSensor(L);
     const uint8_t raw_data_2 = get_uint8_t(L, 2);
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     const bool data = static_cast<bool>(ud->gyros_consistent(
@@ -2307,38 +2422,36 @@ static int AP_InertialSensor_gyros_consistent(lua_State *L) {
 
 #if AP_INERTIALSENSOR_ENABLED
 static int AP_InertialSensor_get_accel(lua_State *L) {
-    AP_InertialSensor * ud = check_AP_InertialSensor(L);
     binding_argcheck(L, 2);
+    AP_InertialSensor * ud = check_AP_InertialSensor(L);
     const uint8_t raw_data_2 = get_uint8_t(L, 2);
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     const Vector3f &data = ud->get_accel(
             data_2);
 
-    new_Vector3f(L);
-    *check_Vector3f(L, -1) = data;
+    *new_Vector3f(L) = data;
     return 1;
 }
 #endif // AP_INERTIALSENSOR_ENABLED
 
 #if AP_INERTIALSENSOR_ENABLED
 static int AP_InertialSensor_get_gyro(lua_State *L) {
-    AP_InertialSensor * ud = check_AP_InertialSensor(L);
     binding_argcheck(L, 2);
+    AP_InertialSensor * ud = check_AP_InertialSensor(L);
     const uint8_t raw_data_2 = get_uint8_t(L, 2);
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     const Vector3f &data = ud->get_gyro(
             data_2);
 
-    new_Vector3f(L);
-    *check_Vector3f(L, -1) = data;
+    *new_Vector3f(L) = data;
     return 1;
 }
 #endif // AP_INERTIALSENSOR_ENABLED
 
 #if AP_INERTIALSENSOR_ENABLED
 static int AP_InertialSensor_calibrating(lua_State *L) {
-    AP_InertialSensor * ud = check_AP_InertialSensor(L);
     binding_argcheck(L, 1);
+    AP_InertialSensor * ud = check_AP_InertialSensor(L);
     const bool data = static_cast<bool>(ud->calibrating());
 
     lua_pushboolean(L, data);
@@ -2348,8 +2461,8 @@ static int AP_InertialSensor_calibrating(lua_State *L) {
 
 #if AP_INERTIALSENSOR_ENABLED
 static int AP_InertialSensor_get_accel_health(lua_State *L) {
-    AP_InertialSensor * ud = check_AP_InertialSensor(L);
     binding_argcheck(L, 2);
+    AP_InertialSensor * ud = check_AP_InertialSensor(L);
     const uint8_t raw_data_2 = get_uint8_t(L, 2);
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     const bool data = static_cast<bool>(ud->get_accel_health(
@@ -2362,8 +2475,8 @@ static int AP_InertialSensor_get_accel_health(lua_State *L) {
 
 #if AP_INERTIALSENSOR_ENABLED
 static int AP_InertialSensor_accels_consistent(lua_State *L) {
-    AP_InertialSensor * ud = check_AP_InertialSensor(L);
     binding_argcheck(L, 2);
+    AP_InertialSensor * ud = check_AP_InertialSensor(L);
     const float raw_data_2 = luaL_checknumber(L, 2);
     const float data_2 = raw_data_2;
     const bool data = static_cast<bool>(ud->accels_consistent(
@@ -2376,8 +2489,8 @@ static int AP_InertialSensor_accels_consistent(lua_State *L) {
 
 #if AP_INERTIALSENSOR_ENABLED
 static int AP_InertialSensor_get_gyro_health(lua_State *L) {
-    AP_InertialSensor * ud = check_AP_InertialSensor(L);
     binding_argcheck(L, 2);
+    AP_InertialSensor * ud = check_AP_InertialSensor(L);
     const uint8_t raw_data_2 = get_uint8_t(L, 2);
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     const bool data = static_cast<bool>(ud->get_gyro_health(
@@ -2390,8 +2503,8 @@ static int AP_InertialSensor_get_gyro_health(lua_State *L) {
 
 #if AP_INERTIALSENSOR_ENABLED
 static int AP_InertialSensor_get_temperature(lua_State *L) {
-    AP_InertialSensor * ud = check_AP_InertialSensor(L);
     binding_argcheck(L, 2);
+    AP_InertialSensor * ud = check_AP_InertialSensor(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, MAX(0, 0), MIN(INS_MAX_INSTANCES, UINT8_MAX));
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     const float data = static_cast<float>(ud->get_temperature(
@@ -2404,8 +2517,8 @@ static int AP_InertialSensor_get_temperature(lua_State *L) {
 
 #if APM_BUILD_TYPE(APM_BUILD_ArduPlane)||APM_BUILD_COPTER_OR_HELI
 static int AP_MotorsMatrix_Scripting_Dynamic_load_factors(lua_State *L) {
-    AP_MotorsMatrix_Scripting_Dynamic * ud = check_AP_MotorsMatrix_Scripting_Dynamic(L);
     binding_argcheck(L, 2);
+    AP_MotorsMatrix_Scripting_Dynamic * ud = check_AP_MotorsMatrix_Scripting_Dynamic(L);
     AP_MotorsMatrix_Scripting_Dynamic::factor_table & data_2 = *check_AP_MotorsMatrix_Scripting_Dynamic__factor_table(L, 2);
     ud->load_factors(
             data_2);
@@ -2416,8 +2529,8 @@ static int AP_MotorsMatrix_Scripting_Dynamic_load_factors(lua_State *L) {
 
 #if APM_BUILD_TYPE(APM_BUILD_ArduPlane)||APM_BUILD_COPTER_OR_HELI
 static int AP_MotorsMatrix_Scripting_Dynamic_add_motor(lua_State *L) {
-    AP_MotorsMatrix_Scripting_Dynamic * ud = check_AP_MotorsMatrix_Scripting_Dynamic(L);
     binding_argcheck(L, 3);
+    AP_MotorsMatrix_Scripting_Dynamic * ud = check_AP_MotorsMatrix_Scripting_Dynamic(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, MAX(0, 0), MIN((AP_MOTORS_MAX_NUM_MOTORS-1), UINT8_MAX));
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     const lua_Integer raw_data_3 = get_integer(L, 3, MAX(0, 0), MIN(AP_MOTORS_MAX_NUM_MOTORS, UINT8_MAX));
@@ -2432,8 +2545,8 @@ static int AP_MotorsMatrix_Scripting_Dynamic_add_motor(lua_State *L) {
 
 #if APM_BUILD_TYPE(APM_BUILD_ArduPlane)||APM_BUILD_COPTER_OR_HELI
 static int AP_MotorsMatrix_Scripting_Dynamic_init(lua_State *L) {
-    AP_MotorsMatrix_Scripting_Dynamic * ud = check_AP_MotorsMatrix_Scripting_Dynamic(L);
     binding_argcheck(L, 2);
+    AP_MotorsMatrix_Scripting_Dynamic * ud = check_AP_MotorsMatrix_Scripting_Dynamic(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, MAX(0, 0), MIN(AP_MOTORS_MAX_NUM_MOTORS, UINT8_MAX));
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     const bool data = static_cast<bool>(ud->init(
@@ -2445,6 +2558,18 @@ static int AP_MotorsMatrix_Scripting_Dynamic_init(lua_State *L) {
 #endif // APM_BUILD_TYPE(APM_BUILD_ArduPlane)||APM_BUILD_COPTER_OR_HELI
 
 #if !defined(HAL_DISABLE_ADC_DRIVER)
+#if HAL_WITH_MCU_MONITORING
+static int hal_analogin_mcu_temperature(lua_State *L) {
+    binding_argcheck(L, 1);
+    const float data = static_cast<float>(hal.analogin->mcu_temperature());
+
+    lua_pushnumber(L, data);
+    return 1;
+}
+#endif // HAL_WITH_MCU_MONITORING
+#endif // !defined(HAL_DISABLE_ADC_DRIVER)
+
+#if !defined(HAL_DISABLE_ADC_DRIVER)
 static int hal_analogin_channel(lua_State *L) {
     binding_argcheck(L, 1);
     AP_HAL::AnalogSource *data = hal.analogin->channel(            ANALOG_INPUT_NONE);
@@ -2452,8 +2577,7 @@ static int hal_analogin_channel(lua_State *L) {
     if (data == NULL) {
         return 0;
     }
-    new_AP_HAL__AnalogSource(L);
-    *(AP_HAL::AnalogSource**)luaL_checkudata(L, -1, "AP_HAL::AnalogSource") = data;
+    *new_AP_HAL__AnalogSource(L) = data;
     return 1;
 }
 #endif // !defined(HAL_DISABLE_ADC_DRIVER)
@@ -2507,8 +2631,8 @@ static int hal_gpio_read(lua_State *L) {
 
 #if APM_BUILD_TYPE(APM_BUILD_ArduCopter)
 static int AP_MotorsMatrix_6DoF_Scripting_add_motor(lua_State *L) {
-    AP_MotorsMatrix_6DoF_Scripting * ud = check_AP_MotorsMatrix_6DoF_Scripting(L);
     binding_argcheck(L, 10);
+    AP_MotorsMatrix_6DoF_Scripting * ud = check_AP_MotorsMatrix_6DoF_Scripting(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, MAX(0, INT8_MIN), MIN((AP_MOTORS_MAX_NUM_MOTORS-1), INT8_MAX));
     const int8_t data_2 = static_cast<int8_t>(raw_data_2);
     const float raw_data_3 = luaL_checknumber(L, 3);
@@ -2543,8 +2667,8 @@ static int AP_MotorsMatrix_6DoF_Scripting_add_motor(lua_State *L) {
 
 #if APM_BUILD_TYPE(APM_BUILD_ArduCopter)
 static int AP_MotorsMatrix_6DoF_Scripting_init(lua_State *L) {
-    AP_MotorsMatrix_6DoF_Scripting * ud = check_AP_MotorsMatrix_6DoF_Scripting(L);
     binding_argcheck(L, 2);
+    AP_MotorsMatrix_6DoF_Scripting * ud = check_AP_MotorsMatrix_6DoF_Scripting(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, MAX(0, 0), MIN(AP_MOTORS_MAX_NUM_MOTORS, UINT8_MAX));
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     const bool data = static_cast<bool>(ud->init(
@@ -2557,8 +2681,8 @@ static int AP_MotorsMatrix_6DoF_Scripting_init(lua_State *L) {
 
 #if APM_BUILD_TYPE(APM_BUILD_ArduCopter)
 static int AC_AttitudeControl_Multi_6DoF_set_offset_roll_pitch(lua_State *L) {
-    AC_AttitudeControl_Multi_6DoF * ud = check_AC_AttitudeControl_Multi_6DoF(L);
     binding_argcheck(L, 3);
+    AC_AttitudeControl_Multi_6DoF * ud = check_AC_AttitudeControl_Multi_6DoF(L);
     const float raw_data_2 = luaL_checknumber(L, 2);
     const float data_2 = raw_data_2;
     const float raw_data_3 = luaL_checknumber(L, 3);
@@ -2573,8 +2697,8 @@ static int AC_AttitudeControl_Multi_6DoF_set_offset_roll_pitch(lua_State *L) {
 
 #if APM_BUILD_TYPE(APM_BUILD_ArduCopter)
 static int AC_AttitudeControl_Multi_6DoF_set_forward_enable(lua_State *L) {
-    AC_AttitudeControl_Multi_6DoF * ud = check_AC_AttitudeControl_Multi_6DoF(L);
     binding_argcheck(L, 2);
+    AC_AttitudeControl_Multi_6DoF * ud = check_AC_AttitudeControl_Multi_6DoF(L);
     const bool data_2 = static_cast<bool>(lua_toboolean(L, 2));
     ud->set_forward_enable(
             data_2);
@@ -2585,8 +2709,8 @@ static int AC_AttitudeControl_Multi_6DoF_set_forward_enable(lua_State *L) {
 
 #if APM_BUILD_TYPE(APM_BUILD_ArduCopter)
 static int AC_AttitudeControl_Multi_6DoF_set_lateral_enable(lua_State *L) {
-    AC_AttitudeControl_Multi_6DoF * ud = check_AC_AttitudeControl_Multi_6DoF(L);
     binding_argcheck(L, 2);
+    AC_AttitudeControl_Multi_6DoF * ud = check_AC_AttitudeControl_Multi_6DoF(L);
     const bool data_2 = static_cast<bool>(lua_toboolean(L, 2));
     ud->set_lateral_enable(
             data_2);
@@ -2597,8 +2721,8 @@ static int AC_AttitudeControl_Multi_6DoF_set_lateral_enable(lua_State *L) {
 
 #if AP_FRSKY_SPORT_TELEM_ENABLED
 static int AP_Frsky_SPort_prep_number(lua_State *L) {
-    AP_Frsky_SPort * ud = check_AP_Frsky_SPort(L);
     binding_argcheck(L, 4);
+    AP_Frsky_SPort * ud = check_AP_Frsky_SPort(L);
     const lua_Integer raw_data_2 = luaL_checkinteger(L, 2);
     const int32_t data_2 = raw_data_2;
     const uint8_t raw_data_3 = get_uint8_t(L, 3);
@@ -2617,8 +2741,8 @@ static int AP_Frsky_SPort_prep_number(lua_State *L) {
 
 #if AP_FRSKY_SPORT_TELEM_ENABLED
 static int AP_Frsky_SPort_sport_telemetry_push(lua_State *L) {
-    AP_Frsky_SPort * ud = check_AP_Frsky_SPort(L);
     binding_argcheck(L, 5);
+    AP_Frsky_SPort * ud = check_AP_Frsky_SPort(L);
     const uint8_t raw_data_2 = get_uint8_t(L, 2);
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     const uint8_t raw_data_3 = get_uint8_t(L, 3);
@@ -2640,8 +2764,8 @@ static int AP_Frsky_SPort_sport_telemetry_push(lua_State *L) {
 
 #if APM_BUILD_TYPE(APM_BUILD_ArduPlane)||APM_BUILD_COPTER_OR_HELI
 static int AP_MotorsMatrix_get_thrust_boost(lua_State *L) {
-    AP_MotorsMatrix * ud = check_AP_MotorsMatrix(L);
     binding_argcheck(L, 1);
+    AP_MotorsMatrix * ud = check_AP_MotorsMatrix(L);
     const bool data = static_cast<bool>(ud->get_thrust_boost());
 
     lua_pushboolean(L, data);
@@ -2651,8 +2775,8 @@ static int AP_MotorsMatrix_get_thrust_boost(lua_State *L) {
 
 #if APM_BUILD_TYPE(APM_BUILD_ArduPlane)||APM_BUILD_COPTER_OR_HELI
 static int AP_MotorsMatrix_get_lost_motor(lua_State *L) {
-    AP_MotorsMatrix * ud = check_AP_MotorsMatrix(L);
     binding_argcheck(L, 1);
+    AP_MotorsMatrix * ud = check_AP_MotorsMatrix(L);
     const uint8_t data = static_cast<uint8_t>(ud->get_lost_motor());
 
     lua_pushinteger(L, data);
@@ -2662,8 +2786,8 @@ static int AP_MotorsMatrix_get_lost_motor(lua_State *L) {
 
 #if APM_BUILD_TYPE(APM_BUILD_ArduPlane)||APM_BUILD_COPTER_OR_HELI
 static int AP_MotorsMatrix_set_throttle_factor(lua_State *L) {
-    AP_MotorsMatrix * ud = check_AP_MotorsMatrix(L);
     binding_argcheck(L, 3);
+    AP_MotorsMatrix * ud = check_AP_MotorsMatrix(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, MAX(0, INT8_MIN), MIN((AP_MOTORS_MAX_NUM_MOTORS-1), INT8_MAX));
     const int8_t data_2 = static_cast<int8_t>(raw_data_2);
     const float raw_data_3 = get_number(L, 3, MAX(0, -INFINITY), MIN(FLT_MAX, INFINITY));
@@ -2679,8 +2803,8 @@ static int AP_MotorsMatrix_set_throttle_factor(lua_State *L) {
 
 #if APM_BUILD_TYPE(APM_BUILD_ArduPlane)||APM_BUILD_COPTER_OR_HELI
 static int AP_MotorsMatrix_add_motor_raw(lua_State *L) {
-    AP_MotorsMatrix * ud = check_AP_MotorsMatrix(L);
     binding_argcheck(L, 6);
+    AP_MotorsMatrix * ud = check_AP_MotorsMatrix(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, MAX(0, INT8_MIN), MIN((AP_MOTORS_MAX_NUM_MOTORS-1), INT8_MAX));
     const int8_t data_2 = static_cast<int8_t>(raw_data_2);
     const float raw_data_3 = luaL_checknumber(L, 3);
@@ -2704,8 +2828,8 @@ static int AP_MotorsMatrix_add_motor_raw(lua_State *L) {
 
 #if APM_BUILD_TYPE(APM_BUILD_ArduPlane)||APM_BUILD_COPTER_OR_HELI
 static int AP_MotorsMatrix_init(lua_State *L) {
-    AP_MotorsMatrix * ud = check_AP_MotorsMatrix(L);
     binding_argcheck(L, 2);
+    AP_MotorsMatrix * ud = check_AP_MotorsMatrix(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, MAX(0, 0), MIN(AP_MOTORS_MAX_NUM_MOTORS, UINT8_MAX));
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     const bool data = static_cast<bool>(ud->init(
@@ -2717,9 +2841,10 @@ static int AP_MotorsMatrix_init(lua_State *L) {
 #endif // APM_BUILD_TYPE(APM_BUILD_ArduPlane)||APM_BUILD_COPTER_OR_HELI
 
 #if APM_BUILD_TYPE(APM_BUILD_ArduSub)
+#if AP_RANGEFINDER_ENABLED
 static int Sub_set_rangefinder_target_cm(lua_State *L) {
-    Sub * ud = check_Sub(L);
     binding_argcheck(L, 2);
+    Sub * ud = check_Sub(L);
     const float raw_data_2 = luaL_checknumber(L, 2);
     const float data_2 = raw_data_2;
     const bool data = static_cast<bool>(ud->set_rangefinder_target_cm(
@@ -2728,34 +2853,39 @@ static int Sub_set_rangefinder_target_cm(lua_State *L) {
     lua_pushboolean(L, data);
     return 1;
 }
+#endif // AP_RANGEFINDER_ENABLED
 #endif // APM_BUILD_TYPE(APM_BUILD_ArduSub)
 
 #if APM_BUILD_TYPE(APM_BUILD_ArduSub)
+#if AP_RANGEFINDER_ENABLED
 static int Sub_get_rangefinder_target_cm(lua_State *L) {
-    Sub * ud = check_Sub(L);
     binding_argcheck(L, 1);
+    Sub * ud = check_Sub(L);
     const float data = static_cast<float>(ud->get_rangefinder_target_cm());
 
     lua_pushnumber(L, data);
     return 1;
 }
+#endif // AP_RANGEFINDER_ENABLED
 #endif // APM_BUILD_TYPE(APM_BUILD_ArduSub)
 
 #if APM_BUILD_TYPE(APM_BUILD_ArduSub)
+#if AP_RANGEFINDER_ENABLED
 static int Sub_rangefinder_alt_ok(lua_State *L) {
-    Sub * ud = check_Sub(L);
     binding_argcheck(L, 1);
+    Sub * ud = check_Sub(L);
     const bool data = static_cast<bool>(ud->rangefinder_alt_ok());
 
     lua_pushboolean(L, data);
     return 1;
 }
+#endif // AP_RANGEFINDER_ENABLED
 #endif // APM_BUILD_TYPE(APM_BUILD_ArduSub)
 
 #if APM_BUILD_TYPE(APM_BUILD_ArduSub)
 static int Sub_is_button_pressed(lua_State *L) {
-    Sub * ud = check_Sub(L);
     binding_argcheck(L, 2);
+    Sub * ud = check_Sub(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, MAX(1, 0), MIN(4, UINT8_MAX));
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     const bool data = static_cast<bool>(ud->is_button_pressed(
@@ -2768,8 +2898,8 @@ static int Sub_is_button_pressed(lua_State *L) {
 
 #if APM_BUILD_TYPE(APM_BUILD_ArduSub)
 static int Sub_get_and_clear_button_count(lua_State *L) {
-    Sub * ud = check_Sub(L);
     binding_argcheck(L, 2);
+    Sub * ud = check_Sub(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, MAX(1, 0), MIN(4, UINT8_MAX));
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     const uint8_t data = static_cast<uint8_t>(ud->get_and_clear_button_count(
@@ -2782,8 +2912,8 @@ static int Sub_get_and_clear_button_count(lua_State *L) {
 
 #if APM_BUILD_TYPE(APM_BUILD_ArduPlane) && HAL_QUADPLANE_ENABLED
 static int QuadPlane_in_vtol_land_descent(lua_State *L) {
-    QuadPlane * ud = check_QuadPlane(L);
     binding_argcheck(L, 1);
+    QuadPlane * ud = check_QuadPlane(L);
     const bool data = static_cast<bool>(ud->in_vtol_land_descent());
 
     lua_pushboolean(L, data);
@@ -2793,8 +2923,8 @@ static int QuadPlane_in_vtol_land_descent(lua_State *L) {
 
 #if APM_BUILD_TYPE(APM_BUILD_ArduPlane) && HAL_QUADPLANE_ENABLED
 static int QuadPlane_abort_landing(lua_State *L) {
-    QuadPlane * ud = check_QuadPlane(L);
     binding_argcheck(L, 1);
+    QuadPlane * ud = check_QuadPlane(L);
     const bool data = static_cast<bool>(ud->abort_landing());
 
     lua_pushboolean(L, data);
@@ -2804,8 +2934,8 @@ static int QuadPlane_abort_landing(lua_State *L) {
 
 #if APM_BUILD_TYPE(APM_BUILD_ArduPlane) && HAL_QUADPLANE_ENABLED
 static int QuadPlane_in_assisted_flight(lua_State *L) {
-    QuadPlane * ud = check_QuadPlane(L);
     binding_argcheck(L, 1);
+    QuadPlane * ud = check_QuadPlane(L);
     const bool data = static_cast<bool>(ud->in_assisted_flight());
 
     lua_pushboolean(L, data);
@@ -2815,8 +2945,8 @@ static int QuadPlane_in_assisted_flight(lua_State *L) {
 
 #if APM_BUILD_TYPE(APM_BUILD_ArduPlane) && HAL_QUADPLANE_ENABLED
 static int QuadPlane_in_vtol_mode(lua_State *L) {
-    QuadPlane * ud = check_QuadPlane(L);
     binding_argcheck(L, 1);
+    QuadPlane * ud = check_QuadPlane(L);
     const bool data = static_cast<bool>(ud->in_vtol_mode());
 
     lua_pushboolean(L, data);
@@ -2826,8 +2956,8 @@ static int QuadPlane_in_vtol_mode(lua_State *L) {
 
 #if AP_NOTIFY_SCRIPTING_LED_ENABLED
 static int ScriptingLED_get_rgb(lua_State *L) {
-    ScriptingLED * ud = check_ScriptingLED(L);
     binding_argcheck(L, 1);
+    ScriptingLED * ud = check_ScriptingLED(L);
     uint8_t data_5002 {};
     uint8_t data_5003 {};
     uint8_t data_5004 {};
@@ -2835,6 +2965,10 @@ static int ScriptingLED_get_rgb(lua_State *L) {
             data_5002,
             data_5003,
             data_5004);
+
+#if 4 > LUA_MINSTACK
+    luaL_checkstack(L, 4, nullptr);
+#endif
 
     lua_pushinteger(L, data_5002);
     lua_pushinteger(L, data_5003);
@@ -2845,8 +2979,8 @@ static int ScriptingLED_get_rgb(lua_State *L) {
 
 #if HAL_BUTTON_ENABLED == 1
 static int AP_Button_get_button_state(lua_State *L) {
-    AP_Button * ud = check_AP_Button(L);
     binding_argcheck(L, 2);
+    AP_Button * ud = check_AP_Button(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, MAX(1, 0), MIN(AP_BUTTON_NUM_PINS, UINT8_MAX));
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     const bool data = static_cast<bool>(ud->get_button_state(
@@ -2859,8 +2993,8 @@ static int AP_Button_get_button_state(lua_State *L) {
 
 #if AP_RPM_ENABLED
 static int AP_RPM_get_rpm(lua_State *L) {
-    AP_RPM * ud = check_AP_RPM(L);
     binding_argcheck(L, 2);
+    AP_RPM * ud = check_AP_RPM(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, MAX(0, 0), MIN(RPM_MAX_INSTANCES, UINT8_MAX));
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     float data_5003 {};
@@ -2869,6 +3003,10 @@ static int AP_RPM_get_rpm(lua_State *L) {
             data_5003));
 
     if (data) {
+#if 2 > LUA_MINSTACK
+        luaL_checkstack(L, 2, nullptr);
+#endif
+
         lua_pushnumber(L, data_5003);
         return 1;
     }
@@ -2878,8 +3016,8 @@ static int AP_RPM_get_rpm(lua_State *L) {
 
 #if AP_MISSION_ENABLED
 static int AP_Mission_jump_to_abort_landing_sequence(lua_State *L) {
-    AP_Mission * ud = check_AP_Mission(L);
     binding_argcheck(L, 1);
+    AP_Mission * ud = check_AP_Mission(L);
 #if AP_SCHEDULER_ENABLED
     AP::scheduler().get_semaphore().take_blocking();
 #endif
@@ -2895,8 +3033,8 @@ static int AP_Mission_jump_to_abort_landing_sequence(lua_State *L) {
 
 #if AP_MISSION_ENABLED
 static int AP_Mission_jump_to_landing_sequence(lua_State *L) {
-    AP_Mission * ud = check_AP_Mission(L);
     binding_argcheck(L, 1);
+    AP_Mission * ud = check_AP_Mission(L);
 #if AP_SCHEDULER_ENABLED
     AP::scheduler().get_semaphore().take_blocking();
 #endif
@@ -2912,8 +3050,8 @@ static int AP_Mission_jump_to_landing_sequence(lua_State *L) {
 
 #if AP_MISSION_ENABLED
 static int AP_Mission_get_last_jump_tag(lua_State *L) {
-    AP_Mission * ud = check_AP_Mission(L);
     binding_argcheck(L, 1);
+    AP_Mission * ud = check_AP_Mission(L);
     uint16_t data_5002 {};
     uint16_t data_5003 {};
 #if AP_SCHEDULER_ENABLED
@@ -2927,6 +3065,10 @@ static int AP_Mission_get_last_jump_tag(lua_State *L) {
     AP::scheduler().get_semaphore().give();
 #endif
     if (data) {
+#if 3 > LUA_MINSTACK
+        luaL_checkstack(L, 3, nullptr);
+#endif
+
         lua_pushinteger(L, data_5002);
         lua_pushinteger(L, data_5003);
         return 2;
@@ -2937,8 +3079,8 @@ static int AP_Mission_get_last_jump_tag(lua_State *L) {
 
 #if AP_MISSION_ENABLED
 static int AP_Mission_get_index_of_jump_tag(lua_State *L) {
-    AP_Mission * ud = check_AP_Mission(L);
     binding_argcheck(L, 2);
+    AP_Mission * ud = check_AP_Mission(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, MAX(0, 0), MIN(UINT16_MAX, UINT16_MAX));
     const uint16_t data_2 = static_cast<uint16_t>(raw_data_2);
 #if AP_SCHEDULER_ENABLED
@@ -2957,8 +3099,8 @@ static int AP_Mission_get_index_of_jump_tag(lua_State *L) {
 
 #if AP_MISSION_ENABLED
 static int AP_Mission_jump_to_tag(lua_State *L) {
-    AP_Mission * ud = check_AP_Mission(L);
     binding_argcheck(L, 2);
+    AP_Mission * ud = check_AP_Mission(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, MAX(0, 0), MIN(UINT16_MAX, UINT16_MAX));
     const uint16_t data_2 = static_cast<uint16_t>(raw_data_2);
 #if AP_SCHEDULER_ENABLED
@@ -2977,8 +3119,8 @@ static int AP_Mission_jump_to_tag(lua_State *L) {
 
 #if AP_MISSION_ENABLED
 static int AP_Mission_cmd_has_location(lua_State *L) {
-    AP_Mission * ud = check_AP_Mission(L);
     binding_argcheck(L, 2);
+    AP_Mission * ud = check_AP_Mission(L);
     const uint16_t raw_data_2 = get_uint16_t(L, 2);
     const uint16_t data_2 = static_cast<uint16_t>(raw_data_2);
 #if AP_SCHEDULER_ENABLED
@@ -2997,8 +3139,8 @@ static int AP_Mission_cmd_has_location(lua_State *L) {
 
 #if AP_MISSION_ENABLED
 static int AP_Mission_clear(lua_State *L) {
-    AP_Mission * ud = check_AP_Mission(L);
     binding_argcheck(L, 1);
+    AP_Mission * ud = check_AP_Mission(L);
 #if AP_SCHEDULER_ENABLED
     AP::scheduler().get_semaphore().take_blocking();
 #endif
@@ -3014,8 +3156,8 @@ static int AP_Mission_clear(lua_State *L) {
 
 #if AP_MISSION_ENABLED
 static int AP_Mission_set_item(lua_State *L) {
-    AP_Mission * ud = check_AP_Mission(L);
     binding_argcheck(L, 3);
+    AP_Mission * ud = check_AP_Mission(L);
     const uint16_t raw_data_2 = get_uint16_t(L, 2);
     const uint16_t data_2 = static_cast<uint16_t>(raw_data_2);
     mavlink_mission_item_int_t & data_3 = *check_mavlink_mission_item_int_t(L, 3);
@@ -3036,8 +3178,8 @@ static int AP_Mission_set_item(lua_State *L) {
 
 #if AP_MISSION_ENABLED
 static int AP_Mission_get_item(lua_State *L) {
-    AP_Mission * ud = check_AP_Mission(L);
     binding_argcheck(L, 2);
+    AP_Mission * ud = check_AP_Mission(L);
     const uint16_t raw_data_2 = get_uint16_t(L, 2);
     const uint16_t data_2 = static_cast<uint16_t>(raw_data_2);
     mavlink_mission_item_int_t data_5003 {};
@@ -3052,8 +3194,11 @@ static int AP_Mission_get_item(lua_State *L) {
     AP::scheduler().get_semaphore().give();
 #endif
     if (data) {
-        new_mavlink_mission_item_int_t(L);
-        *check_mavlink_mission_item_int_t(L, -1) = data_5003;
+#if 2 > LUA_MINSTACK
+        luaL_checkstack(L, 2, nullptr);
+#endif
+
+        *new_mavlink_mission_item_int_t(L) = data_5003;
         return 1;
     }
     return 0;
@@ -3062,8 +3207,8 @@ static int AP_Mission_get_item(lua_State *L) {
 
 #if AP_MISSION_ENABLED
 static int AP_Mission_num_commands(lua_State *L) {
-    AP_Mission * ud = check_AP_Mission(L);
     binding_argcheck(L, 1);
+    AP_Mission * ud = check_AP_Mission(L);
 #if AP_SCHEDULER_ENABLED
     AP::scheduler().get_semaphore().take_blocking();
 #endif
@@ -3079,8 +3224,8 @@ static int AP_Mission_num_commands(lua_State *L) {
 
 #if AP_MISSION_ENABLED
 static int AP_Mission_get_current_do_cmd_id(lua_State *L) {
-    AP_Mission * ud = check_AP_Mission(L);
     binding_argcheck(L, 1);
+    AP_Mission * ud = check_AP_Mission(L);
 #if AP_SCHEDULER_ENABLED
     AP::scheduler().get_semaphore().take_blocking();
 #endif
@@ -3096,8 +3241,8 @@ static int AP_Mission_get_current_do_cmd_id(lua_State *L) {
 
 #if AP_MISSION_ENABLED
 static int AP_Mission_get_current_nav_id(lua_State *L) {
-    AP_Mission * ud = check_AP_Mission(L);
     binding_argcheck(L, 1);
+    AP_Mission * ud = check_AP_Mission(L);
 #if AP_SCHEDULER_ENABLED
     AP::scheduler().get_semaphore().take_blocking();
 #endif
@@ -3113,8 +3258,8 @@ static int AP_Mission_get_current_nav_id(lua_State *L) {
 
 #if AP_MISSION_ENABLED
 static int AP_Mission_get_prev_nav_cmd_id(lua_State *L) {
-    AP_Mission * ud = check_AP_Mission(L);
     binding_argcheck(L, 1);
+    AP_Mission * ud = check_AP_Mission(L);
 #if AP_SCHEDULER_ENABLED
     AP::scheduler().get_semaphore().take_blocking();
 #endif
@@ -3130,8 +3275,8 @@ static int AP_Mission_get_prev_nav_cmd_id(lua_State *L) {
 
 #if AP_MISSION_ENABLED
 static int AP_Mission_set_current_cmd(lua_State *L) {
-    AP_Mission * ud = check_AP_Mission(L);
     binding_argcheck(L, 2);
+    AP_Mission * ud = check_AP_Mission(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, MAX(0, 0), MIN((ud->num_commands()-1), UINT16_MAX));
     const uint16_t data_2 = static_cast<uint16_t>(raw_data_2);
 #if AP_SCHEDULER_ENABLED
@@ -3150,8 +3295,8 @@ static int AP_Mission_set_current_cmd(lua_State *L) {
 
 #if AP_MISSION_ENABLED
 static int AP_Mission_get_current_nav_index(lua_State *L) {
-    AP_Mission * ud = check_AP_Mission(L);
     binding_argcheck(L, 1);
+    AP_Mission * ud = check_AP_Mission(L);
 #if AP_SCHEDULER_ENABLED
     AP::scheduler().get_semaphore().take_blocking();
 #endif
@@ -3167,8 +3312,8 @@ static int AP_Mission_get_current_nav_index(lua_State *L) {
 
 #if AP_MISSION_ENABLED
 static int AP_Mission_state(lua_State *L) {
-    AP_Mission * ud = check_AP_Mission(L);
     binding_argcheck(L, 1);
+    AP_Mission * ud = check_AP_Mission(L);
 #if AP_SCHEDULER_ENABLED
     AP::scheduler().get_semaphore().take_blocking();
 #endif
@@ -3183,8 +3328,8 @@ static int AP_Mission_state(lua_State *L) {
 #endif // AP_MISSION_ENABLED
 
 static int AP_Scripting_restart_all(lua_State *L) {
-    AP_Scripting * ud = check_AP_Scripting(L);
     binding_argcheck(L, 1);
+    AP_Scripting * ud = check_AP_Scripting(L);
     ud->restart_all();
 
     return 0;
@@ -3192,8 +3337,8 @@ static int AP_Scripting_restart_all(lua_State *L) {
 
 #if AP_PARAM_DYNAMIC_ENABLED
 static int AP_Param_add_param(lua_State *L) {
-    AP_Param * ud = check_AP_Param(L);
     binding_argcheck(L, 5);
+    AP_Param * ud = check_AP_Param(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, MAX(0, 0), MIN(200, UINT8_MAX));
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     const lua_Integer raw_data_3 = get_integer(L, 3, MAX(1, 0), MIN(63, UINT8_MAX));
@@ -3214,8 +3359,8 @@ static int AP_Param_add_param(lua_State *L) {
 
 #if AP_PARAM_DYNAMIC_ENABLED
 static int AP_Param_add_table(lua_State *L) {
-    AP_Param * ud = check_AP_Param(L);
     binding_argcheck(L, 4);
+    AP_Param * ud = check_AP_Param(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, MAX(0, 0), MIN(200, UINT8_MAX));
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     const char * data_3 = luaL_checkstring(L, 3);
@@ -3232,8 +3377,8 @@ static int AP_Param_add_table(lua_State *L) {
 #endif // AP_PARAM_DYNAMIC_ENABLED
 
 static int AP_Param_set_default_by_name(lua_State *L) {
-    AP_Param * ud = check_AP_Param(L);
     binding_argcheck(L, 3);
+    AP_Param * ud = check_AP_Param(L);
     const char * data_2 = luaL_checkstring(L, 2);
     const float raw_data_3 = luaL_checknumber(L, 3);
     const float data_3 = raw_data_3;
@@ -3246,8 +3391,8 @@ static int AP_Param_set_default_by_name(lua_State *L) {
 }
 
 static int AP_Param_set_and_save_by_name(lua_State *L) {
-    AP_Param * ud = check_AP_Param(L);
     binding_argcheck(L, 3);
+    AP_Param * ud = check_AP_Param(L);
     const char * data_2 = luaL_checkstring(L, 2);
     const float raw_data_3 = luaL_checknumber(L, 3);
     const float data_3 = raw_data_3;
@@ -3260,8 +3405,8 @@ static int AP_Param_set_and_save_by_name(lua_State *L) {
 }
 
 static int AP_Param_set_by_name(lua_State *L) {
-    AP_Param * ud = check_AP_Param(L);
     binding_argcheck(L, 3);
+    AP_Param * ud = check_AP_Param(L);
     const char * data_2 = luaL_checkstring(L, 2);
     const float raw_data_3 = luaL_checknumber(L, 3);
     const float data_3 = raw_data_3;
@@ -3274,8 +3419,8 @@ static int AP_Param_set_by_name(lua_State *L) {
 }
 
 static int AP_Param_get(lua_State *L) {
-    AP_Param * ud = check_AP_Param(L);
     binding_argcheck(L, 2);
+    AP_Param * ud = check_AP_Param(L);
     const char * data_2 = luaL_checkstring(L, 2);
     float data_5003 {};
     const bool data = static_cast<bool>(ud->get(
@@ -3283,6 +3428,10 @@ static int AP_Param_get(lua_State *L) {
             data_5003));
 
     if (data) {
+#if 2 > LUA_MINSTACK
+        luaL_checkstack(L, 2, nullptr);
+#endif
+
         lua_pushnumber(L, data_5003);
         return 1;
     }
@@ -3290,10 +3439,24 @@ static int AP_Param_get(lua_State *L) {
 }
 
 #if HAL_WITH_ESC_TELEM == 1
-static int AP_ESC_Telem_set_rpm_scale(lua_State *L) {
+static int AP_ESC_Telem_get_last_telem_data_ms(lua_State *L) {
+    binding_argcheck(L, 2);
     AP_ESC_Telem * ud = check_AP_ESC_Telem(L);
+    const lua_Integer raw_data_2 = get_integer(L, 2, MAX(0, 0), MIN(ESC_TELEM_MAX_ESCS, UINT8_MAX));
+    const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
+    const uint32_t data = static_cast<uint32_t>(ud->get_last_telem_data_ms(
+            data_2));
+
+        *new_uint32_t(L) = data;
+    return 1;
+}
+#endif // HAL_WITH_ESC_TELEM == 1
+
+#if HAL_WITH_ESC_TELEM == 1
+static int AP_ESC_Telem_set_rpm_scale(lua_State *L) {
     binding_argcheck(L, 3);
-    const lua_Integer raw_data_2 = get_integer(L, 2, MAX(0, 0), MIN(NUM_SERVO_CHANNELS, UINT8_MAX));
+    AP_ESC_Telem * ud = check_AP_ESC_Telem(L);
+    const lua_Integer raw_data_2 = get_integer(L, 2, MAX(0, 0), MIN(ESC_TELEM_MAX_ESCS, UINT8_MAX));
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     const float raw_data_3 = luaL_checknumber(L, 3);
     const float data_3 = raw_data_3;
@@ -3307,9 +3470,9 @@ static int AP_ESC_Telem_set_rpm_scale(lua_State *L) {
 
 #if HAL_WITH_ESC_TELEM == 1
 static int AP_ESC_Telem_update_telem_data(lua_State *L) {
-    AP_ESC_Telem * ud = check_AP_ESC_Telem(L);
     binding_argcheck(L, 4);
-    const lua_Integer raw_data_2 = get_integer(L, 2, MAX(0, 0), MIN(NUM_SERVO_CHANNELS, UINT8_MAX));
+    AP_ESC_Telem * ud = check_AP_ESC_Telem(L);
+    const lua_Integer raw_data_2 = get_integer(L, 2, MAX(0, 0), MIN(ESC_TELEM_MAX_ESCS, UINT8_MAX));
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     AP_ESC_Telem_Backend::TelemetryData & data_3 = *check_AP_ESC_Telem_Backend__TelemetryData(L, 3);
     const uint16_t raw_data_4 = get_uint16_t(L, 4);
@@ -3325,9 +3488,9 @@ static int AP_ESC_Telem_update_telem_data(lua_State *L) {
 
 #if HAL_WITH_ESC_TELEM == 1
 static int AP_ESC_Telem_update_rpm(lua_State *L) {
-    AP_ESC_Telem * ud = check_AP_ESC_Telem(L);
     binding_argcheck(L, 4);
-    const lua_Integer raw_data_2 = get_integer(L, 2, MAX(0, 0), MIN(NUM_SERVO_CHANNELS, UINT8_MAX));
+    AP_ESC_Telem * ud = check_AP_ESC_Telem(L);
+    const lua_Integer raw_data_2 = get_integer(L, 2, MAX(0, 0), MIN(ESC_TELEM_MAX_ESCS, UINT8_MAX));
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     const uint16_t raw_data_3 = get_uint16_t(L, 3);
     const uint16_t data_3 = static_cast<uint16_t>(raw_data_3);
@@ -3344,9 +3507,9 @@ static int AP_ESC_Telem_update_rpm(lua_State *L) {
 
 #if HAL_WITH_ESC_TELEM == 1
 static int AP_ESC_Telem_get_usage_seconds(lua_State *L) {
-    AP_ESC_Telem * ud = check_AP_ESC_Telem(L);
     binding_argcheck(L, 2);
-    const lua_Integer raw_data_2 = get_integer(L, 2, MAX(0, 0), MIN(NUM_SERVO_CHANNELS, UINT8_MAX));
+    AP_ESC_Telem * ud = check_AP_ESC_Telem(L);
+    const uint8_t raw_data_2 = get_uint8_t(L, 2);
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     uint32_t data_5003 {};
     const bool data = static_cast<bool>(ud->get_usage_seconds(
@@ -3354,8 +3517,11 @@ static int AP_ESC_Telem_get_usage_seconds(lua_State *L) {
             data_5003));
 
     if (data) {
-        new_uint32_t(L);
-        *static_cast<uint32_t *>(luaL_checkudata(L, -1, "uint32_t")) = data_5003;
+#if 2 > LUA_MINSTACK
+        luaL_checkstack(L, 2, nullptr);
+#endif
+
+        *new_uint32_t(L) = data_5003;
         return 1;
     }
     return 0;
@@ -3364,9 +3530,9 @@ static int AP_ESC_Telem_get_usage_seconds(lua_State *L) {
 
 #if HAL_WITH_ESC_TELEM == 1
 static int AP_ESC_Telem_get_consumption_mah(lua_State *L) {
-    AP_ESC_Telem * ud = check_AP_ESC_Telem(L);
     binding_argcheck(L, 2);
-    const lua_Integer raw_data_2 = get_integer(L, 2, MAX(0, 0), MIN(NUM_SERVO_CHANNELS, UINT8_MAX));
+    AP_ESC_Telem * ud = check_AP_ESC_Telem(L);
+    const uint8_t raw_data_2 = get_uint8_t(L, 2);
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     float data_5003 {};
     const bool data = static_cast<bool>(ud->get_consumption_mah(
@@ -3374,6 +3540,10 @@ static int AP_ESC_Telem_get_consumption_mah(lua_State *L) {
             data_5003));
 
     if (data) {
+#if 2 > LUA_MINSTACK
+        luaL_checkstack(L, 2, nullptr);
+#endif
+
         lua_pushnumber(L, data_5003);
         return 1;
     }
@@ -3383,9 +3553,9 @@ static int AP_ESC_Telem_get_consumption_mah(lua_State *L) {
 
 #if HAL_WITH_ESC_TELEM == 1
 static int AP_ESC_Telem_get_voltage(lua_State *L) {
-    AP_ESC_Telem * ud = check_AP_ESC_Telem(L);
     binding_argcheck(L, 2);
-    const lua_Integer raw_data_2 = get_integer(L, 2, MAX(0, 0), MIN(NUM_SERVO_CHANNELS, UINT8_MAX));
+    AP_ESC_Telem * ud = check_AP_ESC_Telem(L);
+    const uint8_t raw_data_2 = get_uint8_t(L, 2);
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     float data_5003 {};
     const bool data = static_cast<bool>(ud->get_voltage(
@@ -3393,6 +3563,10 @@ static int AP_ESC_Telem_get_voltage(lua_State *L) {
             data_5003));
 
     if (data) {
+#if 2 > LUA_MINSTACK
+        luaL_checkstack(L, 2, nullptr);
+#endif
+
         lua_pushnumber(L, data_5003);
         return 1;
     }
@@ -3402,9 +3576,9 @@ static int AP_ESC_Telem_get_voltage(lua_State *L) {
 
 #if HAL_WITH_ESC_TELEM == 1
 static int AP_ESC_Telem_get_current(lua_State *L) {
-    AP_ESC_Telem * ud = check_AP_ESC_Telem(L);
     binding_argcheck(L, 2);
-    const lua_Integer raw_data_2 = get_integer(L, 2, MAX(0, 0), MIN(NUM_SERVO_CHANNELS, UINT8_MAX));
+    AP_ESC_Telem * ud = check_AP_ESC_Telem(L);
+    const uint8_t raw_data_2 = get_uint8_t(L, 2);
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     float data_5003 {};
     const bool data = static_cast<bool>(ud->get_current(
@@ -3412,6 +3586,10 @@ static int AP_ESC_Telem_get_current(lua_State *L) {
             data_5003));
 
     if (data) {
+#if 2 > LUA_MINSTACK
+        luaL_checkstack(L, 2, nullptr);
+#endif
+
         lua_pushnumber(L, data_5003);
         return 1;
     }
@@ -3421,9 +3599,9 @@ static int AP_ESC_Telem_get_current(lua_State *L) {
 
 #if HAL_WITH_ESC_TELEM == 1
 static int AP_ESC_Telem_get_motor_temperature(lua_State *L) {
-    AP_ESC_Telem * ud = check_AP_ESC_Telem(L);
     binding_argcheck(L, 2);
-    const lua_Integer raw_data_2 = get_integer(L, 2, MAX(0, 0), MIN(NUM_SERVO_CHANNELS, UINT8_MAX));
+    AP_ESC_Telem * ud = check_AP_ESC_Telem(L);
+    const uint8_t raw_data_2 = get_uint8_t(L, 2);
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     int16_t data_5003 {};
     const bool data = static_cast<bool>(ud->get_motor_temperature(
@@ -3431,6 +3609,10 @@ static int AP_ESC_Telem_get_motor_temperature(lua_State *L) {
             data_5003));
 
     if (data) {
+#if 2 > LUA_MINSTACK
+        luaL_checkstack(L, 2, nullptr);
+#endif
+
         lua_pushinteger(L, data_5003);
         return 1;
     }
@@ -3440,9 +3622,9 @@ static int AP_ESC_Telem_get_motor_temperature(lua_State *L) {
 
 #if HAL_WITH_ESC_TELEM == 1
 static int AP_ESC_Telem_get_temperature(lua_State *L) {
-    AP_ESC_Telem * ud = check_AP_ESC_Telem(L);
     binding_argcheck(L, 2);
-    const lua_Integer raw_data_2 = get_integer(L, 2, MAX(0, 0), MIN(NUM_SERVO_CHANNELS, UINT8_MAX));
+    AP_ESC_Telem * ud = check_AP_ESC_Telem(L);
+    const uint8_t raw_data_2 = get_uint8_t(L, 2);
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     int16_t data_5003 {};
     const bool data = static_cast<bool>(ud->get_temperature(
@@ -3450,6 +3632,10 @@ static int AP_ESC_Telem_get_temperature(lua_State *L) {
             data_5003));
 
     if (data) {
+#if 2 > LUA_MINSTACK
+        luaL_checkstack(L, 2, nullptr);
+#endif
+
         lua_pushinteger(L, data_5003);
         return 1;
     }
@@ -3459,9 +3645,9 @@ static int AP_ESC_Telem_get_temperature(lua_State *L) {
 
 #if HAL_WITH_ESC_TELEM == 1
 static int AP_ESC_Telem_get_rpm(lua_State *L) {
-    AP_ESC_Telem * ud = check_AP_ESC_Telem(L);
     binding_argcheck(L, 2);
-    const lua_Integer raw_data_2 = get_integer(L, 2, MAX(0, 0), MIN(NUM_SERVO_CHANNELS, UINT8_MAX));
+    AP_ESC_Telem * ud = check_AP_ESC_Telem(L);
+    const uint8_t raw_data_2 = get_uint8_t(L, 2);
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     float data_5003 {};
     const bool data = static_cast<bool>(ud->get_rpm(
@@ -3469,6 +3655,10 @@ static int AP_ESC_Telem_get_rpm(lua_State *L) {
             data_5003));
 
     if (data) {
+#if 2 > LUA_MINSTACK
+        luaL_checkstack(L, 2, nullptr);
+#endif
+
         lua_pushnumber(L, data_5003);
         return 1;
     }
@@ -3478,8 +3668,8 @@ static int AP_ESC_Telem_get_rpm(lua_State *L) {
 
 #if AP_OPTICALFLOW_ENABLED
 static int AP_OpticalFlow_quality(lua_State *L) {
-    AP_OpticalFlow * ud = check_AP_OpticalFlow(L);
     binding_argcheck(L, 1);
+    AP_OpticalFlow * ud = check_AP_OpticalFlow(L);
     const uint8_t data = static_cast<uint8_t>(ud->quality());
 
     lua_pushinteger(L, data);
@@ -3489,8 +3679,8 @@ static int AP_OpticalFlow_quality(lua_State *L) {
 
 #if AP_OPTICALFLOW_ENABLED
 static int AP_OpticalFlow_healthy(lua_State *L) {
-    AP_OpticalFlow * ud = check_AP_OpticalFlow(L);
     binding_argcheck(L, 1);
+    AP_OpticalFlow * ud = check_AP_OpticalFlow(L);
     const bool data = static_cast<bool>(ud->healthy());
 
     lua_pushboolean(L, data);
@@ -3500,8 +3690,8 @@ static int AP_OpticalFlow_healthy(lua_State *L) {
 
 #if AP_OPTICALFLOW_ENABLED
 static int AP_OpticalFlow_enabled(lua_State *L) {
-    AP_OpticalFlow * ud = check_AP_OpticalFlow(L);
     binding_argcheck(L, 1);
+    AP_OpticalFlow * ud = check_AP_OpticalFlow(L);
     const bool data = static_cast<bool>(ud->enabled());
 
     lua_pushboolean(L, data);
@@ -3510,9 +3700,26 @@ static int AP_OpticalFlow_enabled(lua_State *L) {
 #endif // AP_OPTICALFLOW_ENABLED
 
 #if (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_BARO))
-static int AP_Baro_healthy(lua_State *L) {
+static int AP_Baro_get_altitude_difference(lua_State *L) {
+    binding_argcheck(L, 3);
     AP_Baro * ud = check_AP_Baro(L);
+    const float raw_data_2 = luaL_checknumber(L, 2);
+    const float data_2 = raw_data_2;
+    const float raw_data_3 = luaL_checknumber(L, 3);
+    const float data_3 = raw_data_3;
+    const float data = static_cast<float>(ud->get_altitude_difference(
+            data_2,
+            data_3));
+
+    lua_pushnumber(L, data);
+    return 1;
+}
+#endif // (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_BARO))
+
+#if (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_BARO))
+static int AP_Baro_healthy(lua_State *L) {
     binding_argcheck(L, 2);
+    AP_Baro * ud = check_AP_Baro(L);
     const uint8_t raw_data_2 = get_uint8_t(L, 2);
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     const bool data = static_cast<bool>(ud->healthy(
@@ -3525,8 +3732,8 @@ static int AP_Baro_healthy(lua_State *L) {
 
 #if (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_BARO))
 static int AP_Baro_get_altitude(lua_State *L) {
-    AP_Baro * ud = check_AP_Baro(L);
     binding_argcheck(L, 1);
+    AP_Baro * ud = check_AP_Baro(L);
     const float data = static_cast<float>(ud->get_altitude());
 
     lua_pushnumber(L, data);
@@ -3536,8 +3743,8 @@ static int AP_Baro_get_altitude(lua_State *L) {
 
 #if (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_BARO))
 static int AP_Baro_get_external_temperature(lua_State *L) {
-    AP_Baro * ud = check_AP_Baro(L);
     binding_argcheck(L, 1);
+    AP_Baro * ud = check_AP_Baro(L);
     const float data = static_cast<float>(ud->get_external_temperature());
 
     lua_pushnumber(L, data);
@@ -3547,8 +3754,8 @@ static int AP_Baro_get_external_temperature(lua_State *L) {
 
 #if (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_BARO))
 static int AP_Baro_get_temperature(lua_State *L) {
-    AP_Baro * ud = check_AP_Baro(L);
     binding_argcheck(L, 1);
+    AP_Baro * ud = check_AP_Baro(L);
     const float data = static_cast<float>(ud->get_temperature());
 
     lua_pushnumber(L, data);
@@ -3558,8 +3765,8 @@ static int AP_Baro_get_temperature(lua_State *L) {
 
 #if (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_BARO))
 static int AP_Baro_get_pressure(lua_State *L) {
-    AP_Baro * ud = check_AP_Baro(L);
     binding_argcheck(L, 1);
+    AP_Baro * ud = check_AP_Baro(L);
     const float data = static_cast<float>(ud->get_pressure());
 
     lua_pushnumber(L, data);
@@ -3567,29 +3774,10 @@ static int AP_Baro_get_pressure(lua_State *L) {
 }
 #endif // (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_BARO))
 
-#if HAL_GCS_ENABLED
-static int AP_SerialManager_find_serial(lua_State *L) {
-    AP_SerialManager * ud = check_AP_SerialManager(L);
-    binding_argcheck(L, 2);
-    const uint8_t raw_data_2 = get_uint8_t(L, 2);
-    const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
-    AP_HAL::UARTDriver *data = ud->find_serial(
-            AP_SerialManager::SerialProtocol_Scripting,
-            data_2);
-
-    if (data == NULL) {
-        return 0;
-    }
-    new_AP_HAL__UARTDriver(L);
-    *(AP_HAL::UARTDriver**)luaL_checkudata(L, -1, "AP_HAL::UARTDriver") = data;
-    return 1;
-}
-#endif // HAL_GCS_ENABLED
-
 #if AP_RC_CHANNEL_ENABLED
 static int RC_Channels_get_aux_cached(lua_State *L) {
-    RC_Channels * ud = check_RC_Channels(L);
     binding_argcheck(L, 2);
+    RC_Channels * ud = check_RC_Channels(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, static_cast<int32_t>(0), static_cast<int32_t>(UINT16_MAX));
     const RC_Channel::AUX_FUNC data_2 = static_cast<RC_Channel::AUX_FUNC>(raw_data_2);
     uint8_t data_5003 {};
@@ -3604,6 +3792,10 @@ static int RC_Channels_get_aux_cached(lua_State *L) {
     AP::scheduler().get_semaphore().give();
 #endif
     if (data) {
+#if 2 > LUA_MINSTACK
+        luaL_checkstack(L, 2, nullptr);
+#endif
+
         lua_pushinteger(L, data_5003);
         return 1;
     }
@@ -3613,8 +3805,8 @@ static int RC_Channels_get_aux_cached(lua_State *L) {
 
 #if AP_RC_CHANNEL_ENABLED
 static int RC_Channels_lua_rc_channel(lua_State *L) {
-    RC_Channels * ud = check_RC_Channels(L);
     binding_argcheck(L, 2);
+    RC_Channels * ud = check_RC_Channels(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, MAX(1, 0), MIN(NUM_RC_CHANNELS, UINT8_MAX));
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
 #if AP_SCHEDULER_ENABLED
@@ -3629,16 +3821,15 @@ static int RC_Channels_lua_rc_channel(lua_State *L) {
     if (data == NULL) {
         return 0;
     }
-    new_RC_Channel(L);
-    *(RC_Channel**)luaL_checkudata(L, -1, "RC_Channel") = data;
+    *new_RC_Channel(L) = data;
     return 1;
 }
 #endif // AP_RC_CHANNEL_ENABLED
 
 #if AP_RC_CHANNEL_ENABLED
 static int RC_Channels_has_valid_input(lua_State *L) {
-    RC_Channels * ud = check_RC_Channels(L);
     binding_argcheck(L, 1);
+    RC_Channels * ud = check_RC_Channels(L);
 #if AP_SCHEDULER_ENABLED
     AP::scheduler().get_semaphore().take_blocking();
 #endif
@@ -3654,8 +3845,8 @@ static int RC_Channels_has_valid_input(lua_State *L) {
 
 #if AP_RC_CHANNEL_ENABLED
 static int RC_Channels_run_aux_function(lua_State *L) {
-    RC_Channels * ud = check_RC_Channels(L);
     binding_argcheck(L, 3);
+    RC_Channels * ud = check_RC_Channels(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, static_cast<int32_t>(0), static_cast<int32_t>(UINT16_MAX));
     const RC_Channel::AUX_FUNC data_2 = static_cast<RC_Channel::AUX_FUNC>(raw_data_2);
     const lua_Integer raw_data_3 = get_integer(L, 3, static_cast<int32_t>(RC_Channel::AuxSwitchPos::LOW), static_cast<int32_t>(RC_Channel::AuxSwitchPos::HIGH));
@@ -3678,8 +3869,8 @@ static int RC_Channels_run_aux_function(lua_State *L) {
 
 #if AP_RC_CHANNEL_ENABLED
 static int RC_Channels_find_channel_for_option(lua_State *L) {
-    RC_Channels * ud = check_RC_Channels(L);
     binding_argcheck(L, 2);
+    RC_Channels * ud = check_RC_Channels(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, static_cast<int32_t>(0), static_cast<int32_t>(UINT16_MAX));
     const RC_Channel::AUX_FUNC data_2 = static_cast<RC_Channel::AUX_FUNC>(raw_data_2);
 #if AP_SCHEDULER_ENABLED
@@ -3694,16 +3885,15 @@ static int RC_Channels_find_channel_for_option(lua_State *L) {
     if (data == NULL) {
         return 0;
     }
-    new_RC_Channel(L);
-    *(RC_Channel**)luaL_checkudata(L, -1, "RC_Channel") = data;
+    *new_RC_Channel(L) = data;
     return 1;
 }
 #endif // AP_RC_CHANNEL_ENABLED
 
 #if AP_RC_CHANNEL_ENABLED
 static int RC_Channels_get_pwm(lua_State *L) {
-    RC_Channels * ud = check_RC_Channels(L);
     binding_argcheck(L, 2);
+    RC_Channels * ud = check_RC_Channels(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, MAX(1, 0), MIN(NUM_RC_CHANNELS, UINT8_MAX));
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     uint16_t data_5003 {};
@@ -3718,6 +3908,10 @@ static int RC_Channels_get_pwm(lua_State *L) {
     AP::scheduler().get_semaphore().give();
 #endif
     if (data) {
+#if 2 > LUA_MINSTACK
+        luaL_checkstack(L, 2, nullptr);
+#endif
+
         lua_pushinteger(L, data_5003);
         return 1;
     }
@@ -3727,8 +3921,8 @@ static int RC_Channels_get_pwm(lua_State *L) {
 
 #if (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RC_OUT))
 static int SRV_Channels_get_emergency_stop(lua_State *L) {
-    SRV_Channels * ud = check_SRV_Channels(L);
     binding_argcheck(L, 1);
+    SRV_Channels * ud = check_SRV_Channels(L);
     const bool data = static_cast<bool>(ud->get_emergency_stop());
 
     lua_pushboolean(L, data);
@@ -3738,8 +3932,8 @@ static int SRV_Channels_get_emergency_stop(lua_State *L) {
 
 #if (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RC_OUT))
 static int SRV_Channels_set_range(lua_State *L) {
-    SRV_Channels * ud = check_SRV_Channels(L);
     binding_argcheck(L, 3);
+    SRV_Channels * ud = check_SRV_Channels(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, static_cast<int32_t>(SRV_Channel::k_none), static_cast<int32_t>(SRV_Channel::k_nr_aux_servo_functions-1));
     const SRV_Channel::Aux_servo_function_t data_2 = static_cast<SRV_Channel::Aux_servo_function_t>(raw_data_2);
     const uint16_t raw_data_3 = get_uint16_t(L, 3);
@@ -3754,8 +3948,8 @@ static int SRV_Channels_set_range(lua_State *L) {
 
 #if (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RC_OUT))
 static int SRV_Channels_set_angle(lua_State *L) {
-    SRV_Channels * ud = check_SRV_Channels(L);
     binding_argcheck(L, 3);
+    SRV_Channels * ud = check_SRV_Channels(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, static_cast<int32_t>(SRV_Channel::k_none), static_cast<int32_t>(SRV_Channel::k_nr_aux_servo_functions-1));
     const SRV_Channel::Aux_servo_function_t data_2 = static_cast<SRV_Channel::Aux_servo_function_t>(raw_data_2);
     const uint16_t raw_data_3 = get_uint16_t(L, 3);
@@ -3770,8 +3964,8 @@ static int SRV_Channels_set_angle(lua_State *L) {
 
 #if (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RC_OUT))
 static int SRV_Channels_set_output_norm(lua_State *L) {
-    SRV_Channels * ud = check_SRV_Channels(L);
     binding_argcheck(L, 3);
+    SRV_Channels * ud = check_SRV_Channels(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, static_cast<int32_t>(SRV_Channel::k_none), static_cast<int32_t>(SRV_Channel::k_nr_aux_servo_functions-1));
     const SRV_Channel::Aux_servo_function_t data_2 = static_cast<SRV_Channel::Aux_servo_function_t>(raw_data_2);
     const float raw_data_3 = get_number(L, 3, MAX(-1, -INFINITY), MIN(1, INFINITY));
@@ -3786,8 +3980,8 @@ static int SRV_Channels_set_output_norm(lua_State *L) {
 
 #if (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RC_OUT))
 static int SRV_Channels_get_output_scaled(lua_State *L) {
-    SRV_Channels * ud = check_SRV_Channels(L);
     binding_argcheck(L, 2);
+    SRV_Channels * ud = check_SRV_Channels(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, static_cast<int32_t>(SRV_Channel::k_none), static_cast<int32_t>(SRV_Channel::k_nr_aux_servo_functions-1));
     const SRV_Channel::Aux_servo_function_t data_2 = static_cast<SRV_Channel::Aux_servo_function_t>(raw_data_2);
     const float data = static_cast<float>(ud->get_output_scaled(
@@ -3800,8 +3994,8 @@ static int SRV_Channels_get_output_scaled(lua_State *L) {
 
 #if (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RC_OUT))
 static int SRV_Channels_get_output_pwm(lua_State *L) {
-    SRV_Channels * ud = check_SRV_Channels(L);
     binding_argcheck(L, 2);
+    SRV_Channels * ud = check_SRV_Channels(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, static_cast<int32_t>(SRV_Channel::k_none), static_cast<int32_t>(SRV_Channel::k_nr_aux_servo_functions-1));
     const SRV_Channel::Aux_servo_function_t data_2 = static_cast<SRV_Channel::Aux_servo_function_t>(raw_data_2);
     uint16_t data_5003 {};
@@ -3810,6 +4004,10 @@ static int SRV_Channels_get_output_pwm(lua_State *L) {
             data_5003));
 
     if (data) {
+#if 2 > LUA_MINSTACK
+        luaL_checkstack(L, 2, nullptr);
+#endif
+
         lua_pushinteger(L, data_5003);
         return 1;
     }
@@ -3819,8 +4017,8 @@ static int SRV_Channels_get_output_pwm(lua_State *L) {
 
 #if (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RC_OUT))
 static int SRV_Channels_set_output_scaled(lua_State *L) {
-    SRV_Channels * ud = check_SRV_Channels(L);
     binding_argcheck(L, 3);
+    SRV_Channels * ud = check_SRV_Channels(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, static_cast<int32_t>(SRV_Channel::k_none), static_cast<int32_t>(SRV_Channel::k_nr_aux_servo_functions-1));
     const SRV_Channel::Aux_servo_function_t data_2 = static_cast<SRV_Channel::Aux_servo_function_t>(raw_data_2);
     const float raw_data_3 = luaL_checknumber(L, 3);
@@ -3836,8 +4034,8 @@ static int SRV_Channels_set_output_scaled(lua_State *L) {
 #if (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RC_OUT))
 #if (!defined(HAL_BUILD_AP_PERIPH))
 static int SRV_Channels_set_output_pwm_chan_timeout(lua_State *L) {
-    SRV_Channels * ud = check_SRV_Channels(L);
     binding_argcheck(L, 4);
+    SRV_Channels * ud = check_SRV_Channels(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, MAX(0, 0), MIN(NUM_SERVO_CHANNELS-1, UINT8_MAX));
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     const uint16_t raw_data_3 = get_uint16_t(L, 3);
@@ -3856,8 +4054,8 @@ static int SRV_Channels_set_output_pwm_chan_timeout(lua_State *L) {
 
 #if (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RC_OUT))
 static int SRV_Channels_set_output_pwm_chan(lua_State *L) {
-    SRV_Channels * ud = check_SRV_Channels(L);
     binding_argcheck(L, 3);
+    SRV_Channels * ud = check_SRV_Channels(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, MAX(0, 0), MIN(NUM_SERVO_CHANNELS-1, UINT8_MAX));
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     const uint16_t raw_data_3 = get_uint16_t(L, 3);
@@ -3872,8 +4070,8 @@ static int SRV_Channels_set_output_pwm_chan(lua_State *L) {
 
 #if (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RC_OUT))
 static int SRV_Channels_set_output_pwm(lua_State *L) {
-    SRV_Channels * ud = check_SRV_Channels(L);
     binding_argcheck(L, 3);
+    SRV_Channels * ud = check_SRV_Channels(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, static_cast<int32_t>(SRV_Channel::k_none), static_cast<int32_t>(SRV_Channel::k_nr_aux_servo_functions-1));
     const SRV_Channel::Aux_servo_function_t data_2 = static_cast<SRV_Channel::Aux_servo_function_t>(raw_data_2);
     const uint16_t raw_data_3 = get_uint16_t(L, 3);
@@ -3888,8 +4086,8 @@ static int SRV_Channels_set_output_pwm(lua_State *L) {
 
 #if (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RC_OUT))
 static int SRV_Channels_find_channel(lua_State *L) {
-    SRV_Channels * ud = check_SRV_Channels(L);
     binding_argcheck(L, 2);
+    SRV_Channels * ud = check_SRV_Channels(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, static_cast<int32_t>(SRV_Channel::k_none), static_cast<int32_t>(SRV_Channel::k_nr_aux_servo_functions-1));
     const SRV_Channel::Aux_servo_function_t data_2 = static_cast<SRV_Channel::Aux_servo_function_t>(raw_data_2);
     uint8_t data_5003 {};
@@ -3898,6 +4096,10 @@ static int SRV_Channels_find_channel(lua_State *L) {
             data_5003));
 
     if (data) {
+#if 2 > LUA_MINSTACK
+        luaL_checkstack(L, 2, nullptr);
+#endif
+
         lua_pushinteger(L, data_5003);
         return 1;
     }
@@ -3907,8 +4109,8 @@ static int SRV_Channels_find_channel(lua_State *L) {
 
 #if AP_SERIALLED_ENABLED
 static int AP_SerialLED_send(lua_State *L) {
-    AP_SerialLED * ud = check_AP_SerialLED(L);
     binding_argcheck(L, 2);
+    AP_SerialLED * ud = check_AP_SerialLED(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, MAX(1, 0), MIN(16, UINT8_MAX));
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     const bool data = static_cast<bool>(ud->send(
@@ -3921,8 +4123,8 @@ static int AP_SerialLED_send(lua_State *L) {
 
 #if AP_SERIALLED_ENABLED
 static int AP_SerialLED_set_RGB(lua_State *L) {
-    AP_SerialLED * ud = check_AP_SerialLED(L);
     binding_argcheck(L, 6);
+    AP_SerialLED * ud = check_AP_SerialLED(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, MAX(1, 0), MIN(16, UINT8_MAX));
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     const lua_Integer raw_data_3 = get_integer(L, 3, MAX(-1, INT8_MIN), MIN(INT8_MAX, INT8_MAX));
@@ -3947,8 +4149,8 @@ static int AP_SerialLED_set_RGB(lua_State *L) {
 
 #if AP_SERIALLED_ENABLED
 static int AP_SerialLED_set_num_profiled(lua_State *L) {
-    AP_SerialLED * ud = check_AP_SerialLED(L);
     binding_argcheck(L, 3);
+    AP_SerialLED * ud = check_AP_SerialLED(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, MAX(1, 0), MIN(16, UINT8_MAX));
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     const lua_Integer raw_data_3 = get_integer(L, 3, MAX(0, 0), MIN(AP_SERIALLED_MAX_LEDS, UINT8_MAX));
@@ -3964,8 +4166,8 @@ static int AP_SerialLED_set_num_profiled(lua_State *L) {
 
 #if AP_SERIALLED_ENABLED
 static int AP_SerialLED_set_num_neopixel_rgb(lua_State *L) {
-    AP_SerialLED * ud = check_AP_SerialLED(L);
     binding_argcheck(L, 3);
+    AP_SerialLED * ud = check_AP_SerialLED(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, MAX(1, 0), MIN(16, UINT8_MAX));
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     const lua_Integer raw_data_3 = get_integer(L, 3, MAX(0, 0), MIN(AP_SERIALLED_MAX_LEDS, UINT8_MAX));
@@ -3981,8 +4183,8 @@ static int AP_SerialLED_set_num_neopixel_rgb(lua_State *L) {
 
 #if AP_SERIALLED_ENABLED
 static int AP_SerialLED_set_num_neopixel(lua_State *L) {
-    AP_SerialLED * ud = check_AP_SerialLED(L);
     binding_argcheck(L, 3);
+    AP_SerialLED * ud = check_AP_SerialLED(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, MAX(1, 0), MIN(16, UINT8_MAX));
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     const lua_Integer raw_data_3 = get_integer(L, 3, MAX(0, 0), MIN(AP_SERIALLED_MAX_LEDS, UINT8_MAX));
@@ -3997,9 +4199,28 @@ static int AP_SerialLED_set_num_neopixel(lua_State *L) {
 #endif // AP_SERIALLED_ENABLED
 
 #if (!defined(HAL_BUILD_AP_PERIPH))
-static int AP_Vehicle_is_taking_off(lua_State *L) {
+static int AP_Vehicle_set_crosstrack_start(lua_State *L) {
+    binding_argcheck(L, 2);
     AP_Vehicle * ud = check_AP_Vehicle(L);
+    Location & data_2 = *check_Location(L, 2);
+#if AP_SCHEDULER_ENABLED
+    AP::scheduler().get_semaphore().take_blocking();
+#endif
+    const bool data = static_cast<bool>(ud->set_crosstrack_start(
+            data_2));
+
+#if AP_SCHEDULER_ENABLED
+    AP::scheduler().get_semaphore().give();
+#endif
+    lua_pushboolean(L, data);
+    return 1;
+}
+#endif // (!defined(HAL_BUILD_AP_PERIPH))
+
+#if (!defined(HAL_BUILD_AP_PERIPH))
+static int AP_Vehicle_is_taking_off(lua_State *L) {
     binding_argcheck(L, 1);
+    AP_Vehicle * ud = check_AP_Vehicle(L);
 #if AP_SCHEDULER_ENABLED
     AP::scheduler().get_semaphore().take_blocking();
 #endif
@@ -4015,8 +4236,8 @@ static int AP_Vehicle_is_taking_off(lua_State *L) {
 
 #if (!defined(HAL_BUILD_AP_PERIPH))
 static int AP_Vehicle_is_landing(lua_State *L) {
-    AP_Vehicle * ud = check_AP_Vehicle(L);
     binding_argcheck(L, 1);
+    AP_Vehicle * ud = check_AP_Vehicle(L);
 #if AP_SCHEDULER_ENABLED
     AP::scheduler().get_semaphore().take_blocking();
 #endif
@@ -4032,8 +4253,8 @@ static int AP_Vehicle_is_landing(lua_State *L) {
 
 #if (!defined(HAL_BUILD_AP_PERIPH))
 static int AP_Vehicle_reboot(lua_State *L) {
-    AP_Vehicle * ud = check_AP_Vehicle(L);
     binding_argcheck(L, 2);
+    AP_Vehicle * ud = check_AP_Vehicle(L);
     const bool data_2 = static_cast<bool>(lua_toboolean(L, 2));
 #if AP_SCHEDULER_ENABLED
     AP::scheduler().get_semaphore().take_blocking();
@@ -4050,8 +4271,8 @@ static int AP_Vehicle_reboot(lua_State *L) {
 
 #if (!defined(HAL_BUILD_AP_PERIPH))
 static int AP_Vehicle_has_ekf_failsafed(lua_State *L) {
-    AP_Vehicle * ud = check_AP_Vehicle(L);
     binding_argcheck(L, 1);
+    AP_Vehicle * ud = check_AP_Vehicle(L);
 #if AP_SCHEDULER_ENABLED
     AP::scheduler().get_semaphore().take_blocking();
 #endif
@@ -4067,8 +4288,8 @@ static int AP_Vehicle_has_ekf_failsafed(lua_State *L) {
 
 #if (!defined(HAL_BUILD_AP_PERIPH))
 static int AP_Vehicle_set_land_descent_rate(lua_State *L) {
-    AP_Vehicle * ud = check_AP_Vehicle(L);
     binding_argcheck(L, 2);
+    AP_Vehicle * ud = check_AP_Vehicle(L);
     const float raw_data_2 = luaL_checknumber(L, 2);
     const float data_2 = raw_data_2;
 #if AP_SCHEDULER_ENABLED
@@ -4087,8 +4308,8 @@ static int AP_Vehicle_set_land_descent_rate(lua_State *L) {
 
 #if (!defined(HAL_BUILD_AP_PERIPH))
 static int AP_Vehicle_set_velocity_match(lua_State *L) {
-    AP_Vehicle * ud = check_AP_Vehicle(L);
     binding_argcheck(L, 2);
+    AP_Vehicle * ud = check_AP_Vehicle(L);
     Vector2f & data_2 = *check_Vector2f(L, 2);
 #if AP_SCHEDULER_ENABLED
     AP::scheduler().get_semaphore().take_blocking();
@@ -4106,8 +4327,8 @@ static int AP_Vehicle_set_velocity_match(lua_State *L) {
 
 #if (!defined(HAL_BUILD_AP_PERIPH))
 static int AP_Vehicle_nav_scripting_enable(lua_State *L) {
-    AP_Vehicle * ud = check_AP_Vehicle(L);
     binding_argcheck(L, 2);
+    AP_Vehicle * ud = check_AP_Vehicle(L);
     const uint8_t raw_data_2 = get_uint8_t(L, 2);
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
 #if AP_SCHEDULER_ENABLED
@@ -4126,8 +4347,8 @@ static int AP_Vehicle_nav_scripting_enable(lua_State *L) {
 
 #if (!defined(HAL_BUILD_AP_PERIPH))
 static int AP_Vehicle_set_desired_speed(lua_State *L) {
-    AP_Vehicle * ud = check_AP_Vehicle(L);
     binding_argcheck(L, 2);
+    AP_Vehicle * ud = check_AP_Vehicle(L);
     const float raw_data_2 = luaL_checknumber(L, 2);
     const float data_2 = raw_data_2;
 #if AP_SCHEDULER_ENABLED
@@ -4146,8 +4367,8 @@ static int AP_Vehicle_set_desired_speed(lua_State *L) {
 
 #if (!defined(HAL_BUILD_AP_PERIPH))
 static int AP_Vehicle_set_desired_turn_rate_and_speed(lua_State *L) {
-    AP_Vehicle * ud = check_AP_Vehicle(L);
     binding_argcheck(L, 3);
+    AP_Vehicle * ud = check_AP_Vehicle(L);
     const float raw_data_2 = luaL_checknumber(L, 2);
     const float data_2 = raw_data_2;
     const float raw_data_3 = luaL_checknumber(L, 3);
@@ -4169,8 +4390,8 @@ static int AP_Vehicle_set_desired_turn_rate_and_speed(lua_State *L) {
 
 #if (!defined(HAL_BUILD_AP_PERIPH))
 static int AP_Vehicle_set_rudder_offset(lua_State *L) {
-    AP_Vehicle * ud = check_AP_Vehicle(L);
     binding_argcheck(L, 3);
+    AP_Vehicle * ud = check_AP_Vehicle(L);
     const float raw_data_2 = luaL_checknumber(L, 2);
     const float data_2 = raw_data_2;
     const bool data_3 = static_cast<bool>(lua_toboolean(L, 3));
@@ -4190,8 +4411,8 @@ static int AP_Vehicle_set_rudder_offset(lua_State *L) {
 
 #if (!defined(HAL_BUILD_AP_PERIPH))
 static int AP_Vehicle_set_target_throttle_rate_rpy(lua_State *L) {
-    AP_Vehicle * ud = check_AP_Vehicle(L);
     binding_argcheck(L, 5);
+    AP_Vehicle * ud = check_AP_Vehicle(L);
     const float raw_data_2 = get_number(L, 2, MAX(-100, -INFINITY), MIN(100, INFINITY));
     const float data_2 = raw_data_2;
     const float raw_data_3 = luaL_checknumber(L, 3);
@@ -4218,8 +4439,8 @@ static int AP_Vehicle_set_target_throttle_rate_rpy(lua_State *L) {
 
 #if (!defined(HAL_BUILD_AP_PERIPH))
 static int AP_Vehicle_nav_script_time_done(lua_State *L) {
-    AP_Vehicle * ud = check_AP_Vehicle(L);
     binding_argcheck(L, 2);
+    AP_Vehicle * ud = check_AP_Vehicle(L);
     const uint16_t raw_data_2 = get_uint16_t(L, 2);
     const uint16_t data_2 = static_cast<uint16_t>(raw_data_2);
 #if AP_SCHEDULER_ENABLED
@@ -4237,8 +4458,8 @@ static int AP_Vehicle_nav_script_time_done(lua_State *L) {
 
 #if (!defined(HAL_BUILD_AP_PERIPH))
 static int AP_Vehicle_nav_script_time(lua_State *L) {
-    AP_Vehicle * ud = check_AP_Vehicle(L);
     binding_argcheck(L, 1);
+    AP_Vehicle * ud = check_AP_Vehicle(L);
     uint16_t data_5002 {};
     uint8_t data_5003 {};
     float data_5004 {};
@@ -4260,6 +4481,10 @@ static int AP_Vehicle_nav_script_time(lua_State *L) {
     AP::scheduler().get_semaphore().give();
 #endif
     if (data) {
+#if 7 > LUA_MINSTACK
+        luaL_checkstack(L, 7, nullptr);
+#endif
+
         lua_pushinteger(L, data_5002);
         lua_pushinteger(L, data_5003);
         lua_pushnumber(L, data_5004);
@@ -4274,8 +4499,8 @@ static int AP_Vehicle_nav_script_time(lua_State *L) {
 
 #if (!defined(HAL_BUILD_AP_PERIPH))
 static int AP_Vehicle_get_pan_tilt_norm(lua_State *L) {
-    AP_Vehicle * ud = check_AP_Vehicle(L);
     binding_argcheck(L, 1);
+    AP_Vehicle * ud = check_AP_Vehicle(L);
     float data_5002 {};
     float data_5003 {};
 #if AP_SCHEDULER_ENABLED
@@ -4289,6 +4514,10 @@ static int AP_Vehicle_get_pan_tilt_norm(lua_State *L) {
     AP::scheduler().get_semaphore().give();
 #endif
     if (data) {
+#if 3 > LUA_MINSTACK
+        luaL_checkstack(L, 3, nullptr);
+#endif
+
         lua_pushnumber(L, data_5002);
         lua_pushnumber(L, data_5003);
         return 2;
@@ -4299,8 +4528,8 @@ static int AP_Vehicle_get_pan_tilt_norm(lua_State *L) {
 
 #if (!defined(HAL_BUILD_AP_PERIPH))
 static int AP_Vehicle_get_wp_crosstrack_error_m(lua_State *L) {
-    AP_Vehicle * ud = check_AP_Vehicle(L);
     binding_argcheck(L, 1);
+    AP_Vehicle * ud = check_AP_Vehicle(L);
     float data_5002 {};
 #if AP_SCHEDULER_ENABLED
     AP::scheduler().get_semaphore().take_blocking();
@@ -4312,6 +4541,10 @@ static int AP_Vehicle_get_wp_crosstrack_error_m(lua_State *L) {
     AP::scheduler().get_semaphore().give();
 #endif
     if (data) {
+#if 2 > LUA_MINSTACK
+        luaL_checkstack(L, 2, nullptr);
+#endif
+
         lua_pushnumber(L, data_5002);
         return 1;
     }
@@ -4321,8 +4554,8 @@ static int AP_Vehicle_get_wp_crosstrack_error_m(lua_State *L) {
 
 #if (!defined(HAL_BUILD_AP_PERIPH))
 static int AP_Vehicle_get_wp_bearing_deg(lua_State *L) {
-    AP_Vehicle * ud = check_AP_Vehicle(L);
     binding_argcheck(L, 1);
+    AP_Vehicle * ud = check_AP_Vehicle(L);
     float data_5002 {};
 #if AP_SCHEDULER_ENABLED
     AP::scheduler().get_semaphore().take_blocking();
@@ -4334,6 +4567,10 @@ static int AP_Vehicle_get_wp_bearing_deg(lua_State *L) {
     AP::scheduler().get_semaphore().give();
 #endif
     if (data) {
+#if 2 > LUA_MINSTACK
+        luaL_checkstack(L, 2, nullptr);
+#endif
+
         lua_pushnumber(L, data_5002);
         return 1;
     }
@@ -4343,8 +4580,8 @@ static int AP_Vehicle_get_wp_bearing_deg(lua_State *L) {
 
 #if (!defined(HAL_BUILD_AP_PERIPH))
 static int AP_Vehicle_get_wp_distance_m(lua_State *L) {
-    AP_Vehicle * ud = check_AP_Vehicle(L);
     binding_argcheck(L, 1);
+    AP_Vehicle * ud = check_AP_Vehicle(L);
     float data_5002 {};
 #if AP_SCHEDULER_ENABLED
     AP::scheduler().get_semaphore().take_blocking();
@@ -4356,6 +4593,10 @@ static int AP_Vehicle_get_wp_distance_m(lua_State *L) {
     AP::scheduler().get_semaphore().give();
 #endif
     if (data) {
+#if 2 > LUA_MINSTACK
+        luaL_checkstack(L, 2, nullptr);
+#endif
+
         lua_pushnumber(L, data_5002);
         return 1;
     }
@@ -4365,8 +4606,8 @@ static int AP_Vehicle_get_wp_distance_m(lua_State *L) {
 
 #if (!defined(HAL_BUILD_AP_PERIPH))
 static int AP_Vehicle_get_steering_and_throttle(lua_State *L) {
-    AP_Vehicle * ud = check_AP_Vehicle(L);
     binding_argcheck(L, 1);
+    AP_Vehicle * ud = check_AP_Vehicle(L);
     float data_5002 {};
     float data_5003 {};
 #if AP_SCHEDULER_ENABLED
@@ -4380,6 +4621,10 @@ static int AP_Vehicle_get_steering_and_throttle(lua_State *L) {
     AP::scheduler().get_semaphore().give();
 #endif
     if (data) {
+#if 3 > LUA_MINSTACK
+        luaL_checkstack(L, 3, nullptr);
+#endif
+
         lua_pushnumber(L, data_5002);
         lua_pushnumber(L, data_5003);
         return 2;
@@ -4390,8 +4635,8 @@ static int AP_Vehicle_get_steering_and_throttle(lua_State *L) {
 
 #if (!defined(HAL_BUILD_AP_PERIPH))
 static int AP_Vehicle_set_steering_and_throttle(lua_State *L) {
-    AP_Vehicle * ud = check_AP_Vehicle(L);
     binding_argcheck(L, 3);
+    AP_Vehicle * ud = check_AP_Vehicle(L);
     const float raw_data_2 = get_number(L, 2, MAX(-1, -INFINITY), MIN(1, INFINITY));
     const float data_2 = raw_data_2;
     const float raw_data_3 = get_number(L, 3, MAX(-1, -INFINITY), MIN(1, INFINITY));
@@ -4413,8 +4658,8 @@ static int AP_Vehicle_set_steering_and_throttle(lua_State *L) {
 
 #if (!defined(HAL_BUILD_AP_PERIPH))
 static int AP_Vehicle_set_circle_rate(lua_State *L) {
-    AP_Vehicle * ud = check_AP_Vehicle(L);
     binding_argcheck(L, 2);
+    AP_Vehicle * ud = check_AP_Vehicle(L);
     const float raw_data_2 = luaL_checknumber(L, 2);
     const float data_2 = raw_data_2;
 #if AP_SCHEDULER_ENABLED
@@ -4433,8 +4678,8 @@ static int AP_Vehicle_set_circle_rate(lua_State *L) {
 
 #if (!defined(HAL_BUILD_AP_PERIPH))
 static int AP_Vehicle_get_circle_radius(lua_State *L) {
-    AP_Vehicle * ud = check_AP_Vehicle(L);
     binding_argcheck(L, 1);
+    AP_Vehicle * ud = check_AP_Vehicle(L);
     float data_5002 {};
 #if AP_SCHEDULER_ENABLED
     AP::scheduler().get_semaphore().take_blocking();
@@ -4446,6 +4691,10 @@ static int AP_Vehicle_get_circle_radius(lua_State *L) {
     AP::scheduler().get_semaphore().give();
 #endif
     if (data) {
+#if 2 > LUA_MINSTACK
+        luaL_checkstack(L, 2, nullptr);
+#endif
+
         lua_pushnumber(L, data_5002);
         return 1;
     }
@@ -4455,8 +4704,8 @@ static int AP_Vehicle_get_circle_radius(lua_State *L) {
 
 #if (!defined(HAL_BUILD_AP_PERIPH))
 static int AP_Vehicle_set_target_angle_and_climbrate(lua_State *L) {
-    AP_Vehicle * ud = check_AP_Vehicle(L);
     binding_argcheck(L, 7);
+    AP_Vehicle * ud = check_AP_Vehicle(L);
     const float raw_data_2 = get_number(L, 2, MAX(-180, -INFINITY), MIN(180, INFINITY));
     const float data_2 = raw_data_2;
     const float raw_data_3 = get_number(L, 3, MAX(-90, -INFINITY), MIN(90, INFINITY));
@@ -4489,8 +4738,8 @@ static int AP_Vehicle_set_target_angle_and_climbrate(lua_State *L) {
 
 #if (!defined(HAL_BUILD_AP_PERIPH))
 static int AP_Vehicle_set_target_velocity_NED(lua_State *L) {
-    AP_Vehicle * ud = check_AP_Vehicle(L);
     binding_argcheck(L, 2);
+    AP_Vehicle * ud = check_AP_Vehicle(L);
     Vector3f & data_2 = *check_Vector3f(L, 2);
 #if AP_SCHEDULER_ENABLED
     AP::scheduler().get_semaphore().take_blocking();
@@ -4508,8 +4757,8 @@ static int AP_Vehicle_set_target_velocity_NED(lua_State *L) {
 
 #if (!defined(HAL_BUILD_AP_PERIPH))
 static int AP_Vehicle_set_target_velaccel_NED(lua_State *L) {
-    AP_Vehicle * ud = check_AP_Vehicle(L);
     binding_argcheck(L, 8);
+    AP_Vehicle * ud = check_AP_Vehicle(L);
     Vector3f & data_2 = *check_Vector3f(L, 2);
     Vector3f & data_3 = *check_Vector3f(L, 3);
     const bool data_4 = static_cast<bool>(lua_toboolean(L, 4));
@@ -4541,8 +4790,8 @@ static int AP_Vehicle_set_target_velaccel_NED(lua_State *L) {
 
 #if (!defined(HAL_BUILD_AP_PERIPH))
 static int AP_Vehicle_set_target_posvelaccel_NED(lua_State *L) {
-    AP_Vehicle * ud = check_AP_Vehicle(L);
     binding_argcheck(L, 9);
+    AP_Vehicle * ud = check_AP_Vehicle(L);
     Vector3f & data_2 = *check_Vector3f(L, 2);
     Vector3f & data_3 = *check_Vector3f(L, 3);
     Vector3f & data_4 = *check_Vector3f(L, 4);
@@ -4576,8 +4825,8 @@ static int AP_Vehicle_set_target_posvelaccel_NED(lua_State *L) {
 
 #if (!defined(HAL_BUILD_AP_PERIPH))
 static int AP_Vehicle_set_target_posvel_NED(lua_State *L) {
-    AP_Vehicle * ud = check_AP_Vehicle(L);
     binding_argcheck(L, 3);
+    AP_Vehicle * ud = check_AP_Vehicle(L);
     Vector3f & data_2 = *check_Vector3f(L, 2);
     Vector3f & data_3 = *check_Vector3f(L, 3);
 #if AP_SCHEDULER_ENABLED
@@ -4597,8 +4846,8 @@ static int AP_Vehicle_set_target_posvel_NED(lua_State *L) {
 
 #if (!defined(HAL_BUILD_AP_PERIPH))
 static int AP_Vehicle_set_target_pos_NED(lua_State *L) {
-    AP_Vehicle * ud = check_AP_Vehicle(L);
     binding_argcheck(L, 8);
+    AP_Vehicle * ud = check_AP_Vehicle(L);
     Vector3f & data_2 = *check_Vector3f(L, 2);
     const bool data_3 = static_cast<bool>(lua_toboolean(L, 3));
     const float raw_data_4 = get_number(L, 4, MAX(-360, -INFINITY), MIN(+360, INFINITY));
@@ -4630,8 +4879,8 @@ static int AP_Vehicle_set_target_pos_NED(lua_State *L) {
 
 #if (!defined(HAL_BUILD_AP_PERIPH))
 static int AP_Vehicle_update_target_location(lua_State *L) {
-    AP_Vehicle * ud = check_AP_Vehicle(L);
     binding_argcheck(L, 3);
+    AP_Vehicle * ud = check_AP_Vehicle(L);
     Location & data_2 = *check_Location(L, 2);
     Location & data_3 = *check_Location(L, 3);
 #if AP_SCHEDULER_ENABLED
@@ -4651,8 +4900,8 @@ static int AP_Vehicle_update_target_location(lua_State *L) {
 
 #if (!defined(HAL_BUILD_AP_PERIPH))
 static int AP_Vehicle_get_target_location(lua_State *L) {
-    AP_Vehicle * ud = check_AP_Vehicle(L);
     binding_argcheck(L, 1);
+    AP_Vehicle * ud = check_AP_Vehicle(L);
     Location data_5002 {};
 #if AP_SCHEDULER_ENABLED
     AP::scheduler().get_semaphore().take_blocking();
@@ -4664,8 +4913,11 @@ static int AP_Vehicle_get_target_location(lua_State *L) {
     AP::scheduler().get_semaphore().give();
 #endif
     if (data) {
-        new_Location(L);
-        *check_Location(L, -1) = data_5002;
+#if 2 > LUA_MINSTACK
+        luaL_checkstack(L, 2, nullptr);
+#endif
+
+        *new_Location(L) = data_5002;
         return 1;
     }
     return 0;
@@ -4674,8 +4926,8 @@ static int AP_Vehicle_get_target_location(lua_State *L) {
 
 #if (!defined(HAL_BUILD_AP_PERIPH))
 static int AP_Vehicle_set_target_location(lua_State *L) {
-    AP_Vehicle * ud = check_AP_Vehicle(L);
     binding_argcheck(L, 2);
+    AP_Vehicle * ud = check_AP_Vehicle(L);
     Location & data_2 = *check_Location(L, 2);
 #if AP_SCHEDULER_ENABLED
     AP::scheduler().get_semaphore().take_blocking();
@@ -4693,8 +4945,8 @@ static int AP_Vehicle_set_target_location(lua_State *L) {
 
 #if (!defined(HAL_BUILD_AP_PERIPH))
 static int AP_Vehicle_start_takeoff(lua_State *L) {
-    AP_Vehicle * ud = check_AP_Vehicle(L);
     binding_argcheck(L, 2);
+    AP_Vehicle * ud = check_AP_Vehicle(L);
     const float raw_data_2 = get_number(L, 2, MAX((-LOCATION_ALT_MAX_M*100+1), -INFINITY), MIN((LOCATION_ALT_MAX_M*100-1), INFINITY));
     const float data_2 = raw_data_2;
 #if AP_SCHEDULER_ENABLED
@@ -4713,8 +4965,8 @@ static int AP_Vehicle_start_takeoff(lua_State *L) {
 
 #if (!defined(HAL_BUILD_AP_PERIPH))
 static int AP_Vehicle_get_control_output(lua_State *L) {
-    AP_Vehicle * ud = check_AP_Vehicle(L);
     binding_argcheck(L, 2);
+    AP_Vehicle * ud = check_AP_Vehicle(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, static_cast<int32_t>(AP_Vehicle::ControlOutput::Roll), static_cast<int32_t>(((uint32_t)AP_Vehicle::ControlOutput::Last_ControlOutput-1)));
     const AP_Vehicle::ControlOutput data_2 = static_cast<AP_Vehicle::ControlOutput>(raw_data_2);
     float data_5003 {};
@@ -4729,6 +4981,10 @@ static int AP_Vehicle_get_control_output(lua_State *L) {
     AP::scheduler().get_semaphore().give();
 #endif
     if (data) {
+#if 2 > LUA_MINSTACK
+        luaL_checkstack(L, 2, nullptr);
+#endif
+
         lua_pushnumber(L, data_5003);
         return 1;
     }
@@ -4738,8 +4994,8 @@ static int AP_Vehicle_get_control_output(lua_State *L) {
 
 #if (!defined(HAL_BUILD_AP_PERIPH))
 static int AP_Vehicle_get_time_flying_ms(lua_State *L) {
-    AP_Vehicle * ud = check_AP_Vehicle(L);
     binding_argcheck(L, 1);
+    AP_Vehicle * ud = check_AP_Vehicle(L);
 #if AP_SCHEDULER_ENABLED
     AP::scheduler().get_semaphore().take_blocking();
 #endif
@@ -4748,16 +5004,15 @@ static int AP_Vehicle_get_time_flying_ms(lua_State *L) {
 #if AP_SCHEDULER_ENABLED
     AP::scheduler().get_semaphore().give();
 #endif
-        new_uint32_t(L);
-        *static_cast<uint32_t *>(luaL_checkudata(L, -1, "uint32_t")) = data;
+        *new_uint32_t(L) = data;
     return 1;
 }
 #endif // (!defined(HAL_BUILD_AP_PERIPH))
 
 #if (!defined(HAL_BUILD_AP_PERIPH))
 static int AP_Vehicle_get_likely_flying(lua_State *L) {
-    AP_Vehicle * ud = check_AP_Vehicle(L);
     binding_argcheck(L, 1);
+    AP_Vehicle * ud = check_AP_Vehicle(L);
 #if AP_SCHEDULER_ENABLED
     AP::scheduler().get_semaphore().take_blocking();
 #endif
@@ -4773,8 +5028,8 @@ static int AP_Vehicle_get_likely_flying(lua_State *L) {
 
 #if (!defined(HAL_BUILD_AP_PERIPH))
 static int AP_Vehicle_get_control_mode_reason(lua_State *L) {
-    AP_Vehicle * ud = check_AP_Vehicle(L);
     binding_argcheck(L, 1);
+    AP_Vehicle * ud = check_AP_Vehicle(L);
 #if AP_SCHEDULER_ENABLED
     AP::scheduler().get_semaphore().take_blocking();
 #endif
@@ -4790,8 +5045,8 @@ static int AP_Vehicle_get_control_mode_reason(lua_State *L) {
 
 #if (!defined(HAL_BUILD_AP_PERIPH))
 static int AP_Vehicle_get_mode(lua_State *L) {
-    AP_Vehicle * ud = check_AP_Vehicle(L);
     binding_argcheck(L, 1);
+    AP_Vehicle * ud = check_AP_Vehicle(L);
 #if AP_SCHEDULER_ENABLED
     AP::scheduler().get_semaphore().take_blocking();
 #endif
@@ -4807,8 +5062,8 @@ static int AP_Vehicle_get_mode(lua_State *L) {
 
 #if (!defined(HAL_BUILD_AP_PERIPH))
 static int AP_Vehicle_set_mode(lua_State *L) {
-    AP_Vehicle * ud = check_AP_Vehicle(L);
     binding_argcheck(L, 2);
+    AP_Vehicle * ud = check_AP_Vehicle(L);
     const uint8_t raw_data_2 = get_uint8_t(L, 2);
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
 #if AP_SCHEDULER_ENABLED
@@ -4828,32 +5083,30 @@ static int AP_Vehicle_set_mode(lua_State *L) {
 
 #if ENABLE_ONVIF == 1
 static int AP_ONVIF_get_pan_tilt_limit_max(lua_State *L) {
-    AP_ONVIF * ud = check_AP_ONVIF(L);
     binding_argcheck(L, 1);
+    AP_ONVIF * ud = check_AP_ONVIF(L);
     const Vector2f &data = ud->get_pan_tilt_limit_max();
 
-    new_Vector2f(L);
-    *check_Vector2f(L, -1) = data;
+    *new_Vector2f(L) = data;
     return 1;
 }
 #endif // ENABLE_ONVIF == 1
 
 #if ENABLE_ONVIF == 1
 static int AP_ONVIF_get_pan_tilt_limit_min(lua_State *L) {
-    AP_ONVIF * ud = check_AP_ONVIF(L);
     binding_argcheck(L, 1);
+    AP_ONVIF * ud = check_AP_ONVIF(L);
     const Vector2f &data = ud->get_pan_tilt_limit_min();
 
-    new_Vector2f(L);
-    *check_Vector2f(L, -1) = data;
+    *new_Vector2f(L) = data;
     return 1;
 }
 #endif // ENABLE_ONVIF == 1
 
 #if ENABLE_ONVIF == 1
 static int AP_ONVIF_set_absolutemove(lua_State *L) {
-    AP_ONVIF * ud = check_AP_ONVIF(L);
     binding_argcheck(L, 4);
+    AP_ONVIF * ud = check_AP_ONVIF(L);
     const float raw_data_2 = luaL_checknumber(L, 2);
     const float data_2 = raw_data_2;
     const float raw_data_3 = luaL_checknumber(L, 3);
@@ -4872,8 +5125,8 @@ static int AP_ONVIF_set_absolutemove(lua_State *L) {
 
 #if ENABLE_ONVIF == 1
 static int AP_ONVIF_start(lua_State *L) {
-    AP_ONVIF * ud = check_AP_ONVIF(L);
     binding_argcheck(L, 4);
+    AP_ONVIF * ud = check_AP_ONVIF(L);
     const char * data_2 = luaL_checkstring(L, 2);
     const char * data_3 = luaL_checkstring(L, 3);
     const char * data_4 = luaL_checkstring(L, 4);
@@ -4890,8 +5143,8 @@ static int AP_ONVIF_start(lua_State *L) {
 #if HAL_GCS_ENABLED
 #if HAL_HIGH_LATENCY2_ENABLED == 1
 static int GCS_enable_high_latency_connections(lua_State *L) {
-    GCS * ud = check_GCS(L);
     binding_argcheck(L, 2);
+    GCS * ud = check_GCS(L);
     const bool data_2 = static_cast<bool>(lua_toboolean(L, 2));
     ud->enable_high_latency_connections(
             data_2);
@@ -4904,8 +5157,8 @@ static int GCS_enable_high_latency_connections(lua_State *L) {
 #if HAL_GCS_ENABLED
 #if HAL_HIGH_LATENCY2_ENABLED == 1
 static int GCS_get_high_latency_status(lua_State *L) {
-    GCS * ud = check_GCS(L);
     binding_argcheck(L, 1);
+    GCS * ud = check_GCS(L);
     const bool data = static_cast<bool>(ud->get_high_latency_status());
 
     lua_pushboolean(L, data);
@@ -4916,20 +5169,19 @@ static int GCS_get_high_latency_status(lua_State *L) {
 
 #if HAL_GCS_ENABLED
 static int GCS_sysid_myggcs_last_seen_time_ms(lua_State *L) {
-    GCS * ud = check_GCS(L);
     binding_argcheck(L, 1);
+    GCS * ud = check_GCS(L);
     const uint32_t data = static_cast<uint32_t>(ud->sysid_myggcs_last_seen_time_ms());
 
-        new_uint32_t(L);
-        *static_cast<uint32_t *>(luaL_checkudata(L, -1, "uint32_t")) = data;
+        *new_uint32_t(L) = data;
     return 1;
 }
 #endif // HAL_GCS_ENABLED
 
 #if HAL_GCS_ENABLED
 static int GCS_get_hud_throttle(lua_State *L) {
-    GCS * ud = check_GCS(L);
     binding_argcheck(L, 1);
+    GCS * ud = check_GCS(L);
     const int16_t data = static_cast<int16_t>(ud->get_hud_throttle());
 
     lua_pushinteger(L, data);
@@ -4939,8 +5191,8 @@ static int GCS_get_hud_throttle(lua_State *L) {
 
 #if HAL_GCS_ENABLED
 static int GCS_frame_type(lua_State *L) {
-    GCS * ud = check_GCS(L);
     binding_argcheck(L, 1);
+    GCS * ud = check_GCS(L);
     const MAV_TYPE &data = ud->frame_type();
 
     lua_pushinteger(L, data);
@@ -4950,8 +5202,8 @@ static int GCS_frame_type(lua_State *L) {
 
 #if HAL_GCS_ENABLED
 static int GCS_send_named_float(lua_State *L) {
-    GCS * ud = check_GCS(L);
     binding_argcheck(L, 3);
+    GCS * ud = check_GCS(L);
     const char * data_2 = luaL_checkstring(L, 2);
     const float raw_data_3 = luaL_checknumber(L, 3);
     const float data_3 = raw_data_3;
@@ -4965,8 +5217,8 @@ static int GCS_send_named_float(lua_State *L) {
 
 #if HAL_GCS_ENABLED
 static int GCS_set_message_interval(lua_State *L) {
-    GCS * ud = check_GCS(L);
     binding_argcheck(L, 4);
+    GCS * ud = check_GCS(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, MAX(0, 0), MIN(MAVLINK_COMM_NUM_BUFFERS, UINT8_MAX));
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     const uint32_t raw_data_3 = coerce_to_uint32_t(L, 3);
@@ -4985,8 +5237,8 @@ static int GCS_set_message_interval(lua_State *L) {
 
 #if HAL_GCS_ENABLED
 static int GCS_send_text(lua_State *L) {
-    GCS * ud = check_GCS(L);
     binding_argcheck(L, 3);
+    GCS * ud = check_GCS(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, static_cast<int32_t>(MAV_SEVERITY_EMERGENCY), static_cast<int32_t>(MAV_SEVERITY_DEBUG));
     const MAV_SEVERITY data_2 = static_cast<MAV_SEVERITY>(raw_data_2);
     const char * data_3 = luaL_checkstring(L, 3);
@@ -5001,8 +5253,8 @@ static int GCS_send_text(lua_State *L) {
 
 #if AP_RELAY_ENABLED
 static int AP_Relay_get(lua_State *L) {
-    AP_Relay * ud = check_AP_Relay(L);
     binding_argcheck(L, 2);
+    AP_Relay * ud = check_AP_Relay(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, MAX(0, 0), MIN(AP_RELAY_NUM_RELAYS, UINT8_MAX));
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     const uint8_t data = static_cast<uint8_t>(ud->get(
@@ -5015,8 +5267,8 @@ static int AP_Relay_get(lua_State *L) {
 
 #if AP_RELAY_ENABLED
 static int AP_Relay_toggle(lua_State *L) {
-    AP_Relay * ud = check_AP_Relay(L);
     binding_argcheck(L, 2);
+    AP_Relay * ud = check_AP_Relay(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, MAX(0, 0), MIN(AP_RELAY_NUM_RELAYS, UINT8_MAX));
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     ud->toggle(
@@ -5028,8 +5280,8 @@ static int AP_Relay_toggle(lua_State *L) {
 
 #if AP_RELAY_ENABLED
 static int AP_Relay_enabled(lua_State *L) {
-    AP_Relay * ud = check_AP_Relay(L);
     binding_argcheck(L, 2);
+    AP_Relay * ud = check_AP_Relay(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, MAX(0, 0), MIN(AP_RELAY_NUM_RELAYS, UINT8_MAX));
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     const bool data = static_cast<bool>(ud->enabled(
@@ -5042,8 +5294,8 @@ static int AP_Relay_enabled(lua_State *L) {
 
 #if AP_RELAY_ENABLED
 static int AP_Relay_off(lua_State *L) {
-    AP_Relay * ud = check_AP_Relay(L);
     binding_argcheck(L, 2);
+    AP_Relay * ud = check_AP_Relay(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, MAX(0, 0), MIN(AP_RELAY_NUM_RELAYS, UINT8_MAX));
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     ud->off(
@@ -5055,8 +5307,8 @@ static int AP_Relay_off(lua_State *L) {
 
 #if AP_RELAY_ENABLED
 static int AP_Relay_on(lua_State *L) {
-    AP_Relay * ud = check_AP_Relay(L);
     binding_argcheck(L, 2);
+    AP_Relay * ud = check_AP_Relay(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, MAX(0, 0), MIN(AP_RELAY_NUM_RELAYS, UINT8_MAX));
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     ud->on(
@@ -5068,8 +5320,8 @@ static int AP_Relay_on(lua_State *L) {
 
 #if defined(AP_TERRAIN_AVAILABLE) && AP_TERRAIN_AVAILABLE == 1
 static int AP_Terrain_height_above_terrain(lua_State *L) {
-    AP_Terrain * ud = check_AP_Terrain(L);
     binding_argcheck(L, 2);
+    AP_Terrain * ud = check_AP_Terrain(L);
     float data_5002 {};
     const bool data_3 = static_cast<bool>(lua_toboolean(L, 3));
     const bool data = static_cast<bool>(ud->height_above_terrain(
@@ -5077,6 +5329,10 @@ static int AP_Terrain_height_above_terrain(lua_State *L) {
             data_3));
 
     if (data) {
+#if 2 > LUA_MINSTACK
+        luaL_checkstack(L, 2, nullptr);
+#endif
+
         lua_pushnumber(L, data_5002);
         return 1;
     }
@@ -5086,8 +5342,8 @@ static int AP_Terrain_height_above_terrain(lua_State *L) {
 
 #if defined(AP_TERRAIN_AVAILABLE) && AP_TERRAIN_AVAILABLE == 1
 static int AP_Terrain_height_terrain_difference_home(lua_State *L) {
-    AP_Terrain * ud = check_AP_Terrain(L);
     binding_argcheck(L, 2);
+    AP_Terrain * ud = check_AP_Terrain(L);
     float data_5002 {};
     const bool data_3 = static_cast<bool>(lua_toboolean(L, 3));
     const bool data = static_cast<bool>(ud->height_terrain_difference_home(
@@ -5095,6 +5351,10 @@ static int AP_Terrain_height_terrain_difference_home(lua_State *L) {
             data_3));
 
     if (data) {
+#if 2 > LUA_MINSTACK
+        luaL_checkstack(L, 2, nullptr);
+#endif
+
         lua_pushnumber(L, data_5002);
         return 1;
     }
@@ -5104,8 +5364,8 @@ static int AP_Terrain_height_terrain_difference_home(lua_State *L) {
 
 #if defined(AP_TERRAIN_AVAILABLE) && AP_TERRAIN_AVAILABLE == 1
 static int AP_Terrain_height_amsl(lua_State *L) {
-    AP_Terrain * ud = check_AP_Terrain(L);
     binding_argcheck(L, 3);
+    AP_Terrain * ud = check_AP_Terrain(L);
     Location & data_2 = *check_Location(L, 2);
     float data_5003 {};
     const bool data_4 = static_cast<bool>(lua_toboolean(L, 4));
@@ -5115,6 +5375,10 @@ static int AP_Terrain_height_amsl(lua_State *L) {
             data_4));
 
     if (data) {
+#if 2 > LUA_MINSTACK
+        luaL_checkstack(L, 2, nullptr);
+#endif
+
         lua_pushnumber(L, data_5003);
         return 1;
     }
@@ -5124,8 +5388,8 @@ static int AP_Terrain_height_amsl(lua_State *L) {
 
 #if defined(AP_TERRAIN_AVAILABLE) && AP_TERRAIN_AVAILABLE == 1
 static int AP_Terrain_status(lua_State *L) {
-    AP_Terrain * ud = check_AP_Terrain(L);
     binding_argcheck(L, 1);
+    AP_Terrain * ud = check_AP_Terrain(L);
     const uint8_t data = static_cast<uint8_t>(ud->status());
 
     lua_pushinteger(L, data);
@@ -5135,8 +5399,8 @@ static int AP_Terrain_status(lua_State *L) {
 
 #if defined(AP_TERRAIN_AVAILABLE) && AP_TERRAIN_AVAILABLE == 1
 static int AP_Terrain_enabled(lua_State *L) {
-    AP_Terrain * ud = check_AP_Terrain(L);
     binding_argcheck(L, 1);
+    AP_Terrain * ud = check_AP_Terrain(L);
     const bool data = static_cast<bool>(ud->enabled());
 
     lua_pushboolean(L, data);
@@ -5144,10 +5408,10 @@ static int AP_Terrain_enabled(lua_State *L) {
 }
 #endif // defined(AP_TERRAIN_AVAILABLE) && AP_TERRAIN_AVAILABLE == 1
 
-#if (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RANGEFINDER))
+#if AP_RANGEFINDER_ENABLED
 static int RangeFinder_get_backend(lua_State *L) {
-    RangeFinder * ud = check_RangeFinder(L);
     binding_argcheck(L, 2);
+    RangeFinder * ud = check_RangeFinder(L);
     const uint8_t raw_data_2 = get_uint8_t(L, 2);
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     AP_RangeFinder_Backend *data = ud->get_backend(
@@ -5156,31 +5420,29 @@ static int RangeFinder_get_backend(lua_State *L) {
     if (data == NULL) {
         return 0;
     }
-    new_AP_RangeFinder_Backend(L);
-    *(AP_RangeFinder_Backend**)luaL_checkudata(L, -1, "AP_RangeFinder_Backend") = data;
+    *new_AP_RangeFinder_Backend(L) = data;
     return 1;
 }
-#endif // (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RANGEFINDER))
+#endif // AP_RANGEFINDER_ENABLED
 
-#if (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RANGEFINDER))
+#if AP_RANGEFINDER_ENABLED
 static int RangeFinder_get_pos_offset_orient(lua_State *L) {
-    RangeFinder * ud = check_RangeFinder(L);
     binding_argcheck(L, 2);
+    RangeFinder * ud = check_RangeFinder(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, static_cast<int32_t>(ROTATION_NONE), static_cast<int32_t>(ROTATION_MAX-1));
     const Rotation data_2 = static_cast<Rotation>(raw_data_2);
     const Vector3f &data = ud->get_pos_offset_orient(
             data_2);
 
-    new_Vector3f(L);
-    *check_Vector3f(L, -1) = data;
+    *new_Vector3f(L) = data;
     return 1;
 }
-#endif // (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RANGEFINDER))
+#endif // AP_RANGEFINDER_ENABLED
 
-#if (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RANGEFINDER))
+#if AP_RANGEFINDER_ENABLED
 static int RangeFinder_has_data_orient(lua_State *L) {
-    RangeFinder * ud = check_RangeFinder(L);
     binding_argcheck(L, 2);
+    RangeFinder * ud = check_RangeFinder(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, static_cast<int32_t>(ROTATION_NONE), static_cast<int32_t>(ROTATION_MAX-1));
     const Rotation data_2 = static_cast<Rotation>(raw_data_2);
     const bool data = static_cast<bool>(ud->has_data_orient(
@@ -5189,12 +5451,12 @@ static int RangeFinder_has_data_orient(lua_State *L) {
     lua_pushboolean(L, data);
     return 1;
 }
-#endif // (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RANGEFINDER))
+#endif // AP_RANGEFINDER_ENABLED
 
-#if (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RANGEFINDER))
+#if AP_RANGEFINDER_ENABLED
 static int RangeFinder_status_orient(lua_State *L) {
-    RangeFinder * ud = check_RangeFinder(L);
     binding_argcheck(L, 2);
+    RangeFinder * ud = check_RangeFinder(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, static_cast<int32_t>(ROTATION_NONE), static_cast<int32_t>(ROTATION_MAX-1));
     const Rotation data_2 = static_cast<Rotation>(raw_data_2);
     const uint8_t data = static_cast<uint8_t>(ud->status_orient(
@@ -5203,12 +5465,12 @@ static int RangeFinder_status_orient(lua_State *L) {
     lua_pushinteger(L, data);
     return 1;
 }
-#endif // (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RANGEFINDER))
+#endif // AP_RANGEFINDER_ENABLED
 
-#if (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RANGEFINDER))
+#if AP_RANGEFINDER_ENABLED
 static int RangeFinder_ground_clearance_cm_orient(lua_State *L) {
-    RangeFinder * ud = check_RangeFinder(L);
     binding_argcheck(L, 2);
+    RangeFinder * ud = check_RangeFinder(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, static_cast<int32_t>(ROTATION_NONE), static_cast<int32_t>(ROTATION_MAX-1));
     const Rotation data_2 = static_cast<Rotation>(raw_data_2);
     const uint16_t data = static_cast<uint16_t>(ud->ground_clearance_cm_orient(
@@ -5217,12 +5479,12 @@ static int RangeFinder_ground_clearance_cm_orient(lua_State *L) {
     lua_pushinteger(L, data);
     return 1;
 }
-#endif // (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RANGEFINDER))
+#endif // AP_RANGEFINDER_ENABLED
 
-#if (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RANGEFINDER))
+#if AP_RANGEFINDER_ENABLED
 static int RangeFinder_min_distance_cm_orient(lua_State *L) {
-    RangeFinder * ud = check_RangeFinder(L);
     binding_argcheck(L, 2);
+    RangeFinder * ud = check_RangeFinder(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, static_cast<int32_t>(ROTATION_NONE), static_cast<int32_t>(ROTATION_MAX-1));
     const Rotation data_2 = static_cast<Rotation>(raw_data_2);
     const uint16_t data = static_cast<uint16_t>(ud->min_distance_cm_orient(
@@ -5231,12 +5493,12 @@ static int RangeFinder_min_distance_cm_orient(lua_State *L) {
     lua_pushinteger(L, data);
     return 1;
 }
-#endif // (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RANGEFINDER))
+#endif // AP_RANGEFINDER_ENABLED
 
-#if (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RANGEFINDER))
+#if AP_RANGEFINDER_ENABLED
 static int RangeFinder_max_distance_cm_orient(lua_State *L) {
-    RangeFinder * ud = check_RangeFinder(L);
     binding_argcheck(L, 2);
+    RangeFinder * ud = check_RangeFinder(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, static_cast<int32_t>(ROTATION_NONE), static_cast<int32_t>(ROTATION_MAX-1));
     const Rotation data_2 = static_cast<Rotation>(raw_data_2);
     const uint16_t data = static_cast<uint16_t>(ud->max_distance_cm_orient(
@@ -5245,12 +5507,12 @@ static int RangeFinder_max_distance_cm_orient(lua_State *L) {
     lua_pushinteger(L, data);
     return 1;
 }
-#endif // (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RANGEFINDER))
+#endif // AP_RANGEFINDER_ENABLED
 
-#if (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RANGEFINDER))
+#if AP_RANGEFINDER_ENABLED
 static int RangeFinder_signal_quality_pct_orient(lua_State *L) {
-    RangeFinder * ud = check_RangeFinder(L);
     binding_argcheck(L, 2);
+    RangeFinder * ud = check_RangeFinder(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, static_cast<int32_t>(ROTATION_NONE), static_cast<int32_t>(ROTATION_MAX-1));
     const Rotation data_2 = static_cast<Rotation>(raw_data_2);
     const int8_t data = static_cast<int8_t>(ud->signal_quality_pct_orient(
@@ -5259,12 +5521,12 @@ static int RangeFinder_signal_quality_pct_orient(lua_State *L) {
     lua_pushinteger(L, data);
     return 1;
 }
-#endif // (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RANGEFINDER))
+#endif // AP_RANGEFINDER_ENABLED
 
-#if (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RANGEFINDER))
+#if AP_RANGEFINDER_ENABLED
 static int RangeFinder_distance_cm_orient(lua_State *L) {
-    RangeFinder * ud = check_RangeFinder(L);
     binding_argcheck(L, 2);
+    RangeFinder * ud = check_RangeFinder(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, static_cast<int32_t>(ROTATION_NONE), static_cast<int32_t>(ROTATION_MAX-1));
     const Rotation data_2 = static_cast<Rotation>(raw_data_2);
     const uint16_t data = static_cast<uint16_t>(ud->distance_cm_orient(
@@ -5273,12 +5535,12 @@ static int RangeFinder_distance_cm_orient(lua_State *L) {
     lua_pushinteger(L, data);
     return 1;
 }
-#endif // (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RANGEFINDER))
+#endif // AP_RANGEFINDER_ENABLED
 
-#if (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RANGEFINDER))
+#if AP_RANGEFINDER_ENABLED
 static int RangeFinder_has_orientation(lua_State *L) {
-    RangeFinder * ud = check_RangeFinder(L);
     binding_argcheck(L, 2);
+    RangeFinder * ud = check_RangeFinder(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, static_cast<int32_t>(ROTATION_NONE), static_cast<int32_t>(ROTATION_MAX-1));
     const Rotation data_2 = static_cast<Rotation>(raw_data_2);
     const bool data = static_cast<bool>(ud->has_orientation(
@@ -5287,23 +5549,23 @@ static int RangeFinder_has_orientation(lua_State *L) {
     lua_pushboolean(L, data);
     return 1;
 }
-#endif // (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RANGEFINDER))
+#endif // AP_RANGEFINDER_ENABLED
 
-#if (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RANGEFINDER))
+#if AP_RANGEFINDER_ENABLED
 static int RangeFinder_num_sensors(lua_State *L) {
-    RangeFinder * ud = check_RangeFinder(L);
     binding_argcheck(L, 1);
+    RangeFinder * ud = check_RangeFinder(L);
     const uint8_t data = static_cast<uint8_t>(ud->num_sensors());
 
     lua_pushinteger(L, data);
     return 1;
 }
-#endif // (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RANGEFINDER))
+#endif // AP_RANGEFINDER_ENABLED
 
 #if HAL_PROXIMITY_ENABLED == 1
 static int AP_Proximity_get_backend(lua_State *L) {
-    AP_Proximity * ud = check_AP_Proximity(L);
     binding_argcheck(L, 2);
+    AP_Proximity * ud = check_AP_Proximity(L);
     const uint8_t raw_data_2 = get_uint8_t(L, 2);
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     AP_Proximity_Backend *data = ud->get_backend(
@@ -5312,16 +5574,15 @@ static int AP_Proximity_get_backend(lua_State *L) {
     if (data == NULL) {
         return 0;
     }
-    new_AP_Proximity_Backend(L);
-    *(AP_Proximity_Backend**)luaL_checkudata(L, -1, "AP_Proximity_Backend") = data;
+    *new_AP_Proximity_Backend(L) = data;
     return 1;
 }
 #endif // HAL_PROXIMITY_ENABLED == 1
 
 #if HAL_PROXIMITY_ENABLED == 1
 static int AP_Proximity_get_object_angle_and_distance(lua_State *L) {
-    AP_Proximity * ud = check_AP_Proximity(L);
     binding_argcheck(L, 2);
+    AP_Proximity * ud = check_AP_Proximity(L);
     const uint8_t raw_data_2 = get_uint8_t(L, 2);
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     float data_5003 {};
@@ -5332,6 +5593,10 @@ static int AP_Proximity_get_object_angle_and_distance(lua_State *L) {
             data_5004));
 
     if (data) {
+#if 3 > LUA_MINSTACK
+        luaL_checkstack(L, 3, nullptr);
+#endif
+
         lua_pushnumber(L, data_5003);
         lua_pushnumber(L, data_5004);
         return 2;
@@ -5342,8 +5607,8 @@ static int AP_Proximity_get_object_angle_and_distance(lua_State *L) {
 
 #if HAL_PROXIMITY_ENABLED == 1
 static int AP_Proximity_get_closest_object(lua_State *L) {
-    AP_Proximity * ud = check_AP_Proximity(L);
     binding_argcheck(L, 1);
+    AP_Proximity * ud = check_AP_Proximity(L);
     float data_5002 {};
     float data_5003 {};
     const bool data = static_cast<bool>(ud->get_closest_object(
@@ -5351,6 +5616,10 @@ static int AP_Proximity_get_closest_object(lua_State *L) {
             data_5003));
 
     if (data) {
+#if 3 > LUA_MINSTACK
+        luaL_checkstack(L, 3, nullptr);
+#endif
+
         lua_pushnumber(L, data_5002);
         lua_pushnumber(L, data_5003);
         return 2;
@@ -5361,8 +5630,8 @@ static int AP_Proximity_get_closest_object(lua_State *L) {
 
 #if HAL_PROXIMITY_ENABLED == 1
 static int AP_Proximity_get_object_count(lua_State *L) {
-    AP_Proximity * ud = check_AP_Proximity(L);
     binding_argcheck(L, 1);
+    AP_Proximity * ud = check_AP_Proximity(L);
     const uint8_t data = static_cast<uint8_t>(ud->get_object_count());
 
     lua_pushinteger(L, data);
@@ -5372,8 +5641,8 @@ static int AP_Proximity_get_object_count(lua_State *L) {
 
 #if HAL_PROXIMITY_ENABLED == 1
 static int AP_Proximity_num_sensors(lua_State *L) {
-    AP_Proximity * ud = check_AP_Proximity(L);
     binding_argcheck(L, 1);
+    AP_Proximity * ud = check_AP_Proximity(L);
     const uint8_t data = static_cast<uint8_t>(ud->num_sensors());
 
     lua_pushinteger(L, data);
@@ -5383,8 +5652,8 @@ static int AP_Proximity_num_sensors(lua_State *L) {
 
 #if HAL_PROXIMITY_ENABLED == 1
 static int AP_Proximity_get_status(lua_State *L) {
-    AP_Proximity * ud = check_AP_Proximity(L);
     binding_argcheck(L, 1);
+    AP_Proximity * ud = check_AP_Proximity(L);
     const uint8_t data = static_cast<uint8_t>(ud->get_status());
 
     lua_pushinteger(L, data);
@@ -5394,8 +5663,8 @@ static int AP_Proximity_get_status(lua_State *L) {
 
 #if (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_NOTIFY))
 static int AP_Notify_release_text_scripting(lua_State *L) {
-    AP_Notify * ud = check_AP_Notify(L);
     binding_argcheck(L, 2);
+    AP_Notify * ud = check_AP_Notify(L);
     const uint8_t raw_data_2 = get_uint8_t(L, 2);
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     ud->release_text_scripting(
@@ -5407,8 +5676,8 @@ static int AP_Notify_release_text_scripting(lua_State *L) {
 
 #if (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_NOTIFY))
 static int AP_Notify_send_text_scripting(lua_State *L) {
-    AP_Notify * ud = check_AP_Notify(L);
     binding_argcheck(L, 3);
+    AP_Notify * ud = check_AP_Notify(L);
     const char * data_2 = luaL_checkstring(L, 2);
     const uint8_t raw_data_3 = get_uint8_t(L, 3);
     const uint8_t data_3 = static_cast<uint8_t>(raw_data_3);
@@ -5422,8 +5691,8 @@ static int AP_Notify_send_text_scripting(lua_State *L) {
 
 #if (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_NOTIFY))
 static int AP_Notify_handle_rgb_id(lua_State *L) {
-    AP_Notify * ud = check_AP_Notify(L);
     binding_argcheck(L, 5);
+    AP_Notify * ud = check_AP_Notify(L);
     const uint8_t raw_data_2 = get_uint8_t(L, 2);
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     const uint8_t raw_data_3 = get_uint8_t(L, 3);
@@ -5444,8 +5713,8 @@ static int AP_Notify_handle_rgb_id(lua_State *L) {
 
 #if (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_NOTIFY))
 static int AP_Notify_handle_rgb(lua_State *L) {
-    AP_Notify * ud = check_AP_Notify(L);
     binding_argcheck(L, 5);
+    AP_Notify * ud = check_AP_Notify(L);
     const uint8_t raw_data_2 = get_uint8_t(L, 2);
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     const uint8_t raw_data_3 = get_uint8_t(L, 3);
@@ -5466,8 +5735,8 @@ static int AP_Notify_handle_rgb(lua_State *L) {
 
 #if (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_NOTIFY))
 static int AP_Notify_play_tune(lua_State *L) {
-    AP_Notify * ud = check_AP_Notify(L);
     binding_argcheck(L, 2);
+    AP_Notify * ud = check_AP_Notify(L);
     const char * data_2 = luaL_checkstring(L, 2);
     ud->play_tune(
             data_2);
@@ -5477,14 +5746,61 @@ static int AP_Notify_play_tune(lua_State *L) {
 #endif // (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_NOTIFY))
 
 #if (AP_GPS_ENABLED && (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_GPS)))
-static int AP_GPS_first_unconfigured_gps(lua_State *L) {
+static int AP_GPS_time_epoch_usec(lua_State *L) {
+    binding_argcheck(L, 2);
     AP_GPS * ud = check_AP_GPS(L);
+    const lua_Integer raw_data_2 = get_integer(L, 2, MAX(0, 0), MIN(ud->num_sensors(), UINT8_MAX));
+    const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
+    const uint64_t &data = ud->time_epoch_usec(
+            data_2);
+
+    *new_uint64_t(L) = data;
+    return 1;
+}
+#endif // (AP_GPS_ENABLED && (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_GPS)))
+
+#if (AP_GPS_ENABLED && (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_GPS)))
+static int AP_GPS_gps_yaw_deg(lua_State *L) {
+    binding_argcheck(L, 2);
+    AP_GPS * ud = check_AP_GPS(L);
+    const lua_Integer raw_data_2 = get_integer(L, 2, MAX(0, 0), MIN(ud->num_sensors(), UINT8_MAX));
+    const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
+    float data_5003 {};
+    float data_5004 {};
+    uint32_t data_5005 {};
+    const bool data = static_cast<bool>(ud->gps_yaw_deg(
+            data_2,
+            data_5003,
+            data_5004,
+            data_5005));
+
+    if (data) {
+#if 4 > LUA_MINSTACK
+        luaL_checkstack(L, 4, nullptr);
+#endif
+
+        lua_pushnumber(L, data_5003);
+        lua_pushnumber(L, data_5004);
+        *new_uint32_t(L) = data_5005;
+        return 3;
+    }
+    return 0;
+}
+#endif // (AP_GPS_ENABLED && (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_GPS)))
+
+#if (AP_GPS_ENABLED && (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_GPS)))
+static int AP_GPS_first_unconfigured_gps(lua_State *L) {
     binding_argcheck(L, 1);
+    AP_GPS * ud = check_AP_GPS(L);
     uint8_t data_5002 {};
     const bool data = static_cast<bool>(ud->first_unconfigured_gps(
             data_5002));
 
     if (data) {
+#if 2 > LUA_MINSTACK
+        luaL_checkstack(L, 2, nullptr);
+#endif
+
         lua_pushinteger(L, data_5002);
         return 1;
     }
@@ -5494,23 +5810,22 @@ static int AP_GPS_first_unconfigured_gps(lua_State *L) {
 
 #if (AP_GPS_ENABLED && (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_GPS)))
 static int AP_GPS_get_antenna_offset(lua_State *L) {
-    AP_GPS * ud = check_AP_GPS(L);
     binding_argcheck(L, 2);
+    AP_GPS * ud = check_AP_GPS(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, MAX(0, 0), MIN(ud->num_sensors(), UINT8_MAX));
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     const Vector3f &data = ud->get_antenna_offset(
             data_2);
 
-    new_Vector3f(L);
-    *check_Vector3f(L, -1) = data;
+    *new_Vector3f(L) = data;
     return 1;
 }
 #endif // (AP_GPS_ENABLED && (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_GPS)))
 
 #if (AP_GPS_ENABLED && (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_GPS)))
 static int AP_GPS_have_vertical_velocity(lua_State *L) {
-    AP_GPS * ud = check_AP_GPS(L);
     binding_argcheck(L, 2);
+    AP_GPS * ud = check_AP_GPS(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, MAX(0, 0), MIN(ud->num_sensors(), UINT8_MAX));
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     const bool data = static_cast<bool>(ud->have_vertical_velocity(
@@ -5523,38 +5838,36 @@ static int AP_GPS_have_vertical_velocity(lua_State *L) {
 
 #if (AP_GPS_ENABLED && (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_GPS)))
 static int AP_GPS_last_message_time_ms(lua_State *L) {
-    AP_GPS * ud = check_AP_GPS(L);
     binding_argcheck(L, 2);
+    AP_GPS * ud = check_AP_GPS(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, MAX(0, 0), MIN(ud->num_sensors(), UINT8_MAX));
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     const uint32_t data = static_cast<uint32_t>(ud->last_message_time_ms(
             data_2));
 
-        new_uint32_t(L);
-        *static_cast<uint32_t *>(luaL_checkudata(L, -1, "uint32_t")) = data;
+        *new_uint32_t(L) = data;
     return 1;
 }
 #endif // (AP_GPS_ENABLED && (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_GPS)))
 
 #if (AP_GPS_ENABLED && (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_GPS)))
 static int AP_GPS_last_fix_time_ms(lua_State *L) {
-    AP_GPS * ud = check_AP_GPS(L);
     binding_argcheck(L, 2);
+    AP_GPS * ud = check_AP_GPS(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, MAX(0, 0), MIN(ud->num_sensors(), UINT8_MAX));
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     const uint32_t data = static_cast<uint32_t>(ud->last_fix_time_ms(
             data_2));
 
-        new_uint32_t(L);
-        *static_cast<uint32_t *>(luaL_checkudata(L, -1, "uint32_t")) = data;
+        *new_uint32_t(L) = data;
     return 1;
 }
 #endif // (AP_GPS_ENABLED && (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_GPS)))
 
 #if (AP_GPS_ENABLED && (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_GPS)))
 static int AP_GPS_get_vdop(lua_State *L) {
-    AP_GPS * ud = check_AP_GPS(L);
     binding_argcheck(L, 2);
+    AP_GPS * ud = check_AP_GPS(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, MAX(0, 0), MIN(ud->num_sensors(), UINT8_MAX));
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     const uint16_t data = static_cast<uint16_t>(ud->get_vdop(
@@ -5567,8 +5880,8 @@ static int AP_GPS_get_vdop(lua_State *L) {
 
 #if (AP_GPS_ENABLED && (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_GPS)))
 static int AP_GPS_get_hdop(lua_State *L) {
-    AP_GPS * ud = check_AP_GPS(L);
     binding_argcheck(L, 2);
+    AP_GPS * ud = check_AP_GPS(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, MAX(0, 0), MIN(ud->num_sensors(), UINT8_MAX));
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     const uint16_t data = static_cast<uint16_t>(ud->get_hdop(
@@ -5581,23 +5894,22 @@ static int AP_GPS_get_hdop(lua_State *L) {
 
 #if (AP_GPS_ENABLED && (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_GPS)))
 static int AP_GPS_time_week_ms(lua_State *L) {
-    AP_GPS * ud = check_AP_GPS(L);
     binding_argcheck(L, 2);
+    AP_GPS * ud = check_AP_GPS(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, MAX(0, 0), MIN(ud->num_sensors(), UINT8_MAX));
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     const uint32_t data = static_cast<uint32_t>(ud->time_week_ms(
             data_2));
 
-        new_uint32_t(L);
-        *static_cast<uint32_t *>(luaL_checkudata(L, -1, "uint32_t")) = data;
+        *new_uint32_t(L) = data;
     return 1;
 }
 #endif // (AP_GPS_ENABLED && (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_GPS)))
 
 #if (AP_GPS_ENABLED && (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_GPS)))
 static int AP_GPS_time_week(lua_State *L) {
-    AP_GPS * ud = check_AP_GPS(L);
     binding_argcheck(L, 2);
+    AP_GPS * ud = check_AP_GPS(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, MAX(0, 0), MIN(ud->num_sensors(), UINT8_MAX));
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     const uint16_t data = static_cast<uint16_t>(ud->time_week(
@@ -5610,8 +5922,8 @@ static int AP_GPS_time_week(lua_State *L) {
 
 #if (AP_GPS_ENABLED && (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_GPS)))
 static int AP_GPS_num_sats(lua_State *L) {
-    AP_GPS * ud = check_AP_GPS(L);
     binding_argcheck(L, 2);
+    AP_GPS * ud = check_AP_GPS(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, MAX(0, 0), MIN(ud->num_sensors(), UINT8_MAX));
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     const uint8_t data = static_cast<uint8_t>(ud->num_sats(
@@ -5624,8 +5936,8 @@ static int AP_GPS_num_sats(lua_State *L) {
 
 #if (AP_GPS_ENABLED && (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_GPS)))
 static int AP_GPS_ground_course(lua_State *L) {
-    AP_GPS * ud = check_AP_GPS(L);
     binding_argcheck(L, 2);
+    AP_GPS * ud = check_AP_GPS(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, MAX(0, 0), MIN(ud->num_sensors(), UINT8_MAX));
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     const float data = static_cast<float>(ud->ground_course(
@@ -5638,8 +5950,8 @@ static int AP_GPS_ground_course(lua_State *L) {
 
 #if (AP_GPS_ENABLED && (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_GPS)))
 static int AP_GPS_ground_speed(lua_State *L) {
-    AP_GPS * ud = check_AP_GPS(L);
     binding_argcheck(L, 2);
+    AP_GPS * ud = check_AP_GPS(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, MAX(0, 0), MIN(ud->num_sensors(), UINT8_MAX));
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     const float data = static_cast<float>(ud->ground_speed(
@@ -5652,23 +5964,22 @@ static int AP_GPS_ground_speed(lua_State *L) {
 
 #if (AP_GPS_ENABLED && (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_GPS)))
 static int AP_GPS_velocity(lua_State *L) {
-    AP_GPS * ud = check_AP_GPS(L);
     binding_argcheck(L, 2);
+    AP_GPS * ud = check_AP_GPS(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, MAX(0, 0), MIN(ud->num_sensors(), UINT8_MAX));
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     const Vector3f &data = ud->velocity(
             data_2);
 
-    new_Vector3f(L);
-    *check_Vector3f(L, -1) = data;
+    *new_Vector3f(L) = data;
     return 1;
 }
 #endif // (AP_GPS_ENABLED && (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_GPS)))
 
 #if (AP_GPS_ENABLED && (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_GPS)))
 static int AP_GPS_vertical_accuracy(lua_State *L) {
-    AP_GPS * ud = check_AP_GPS(L);
     binding_argcheck(L, 2);
+    AP_GPS * ud = check_AP_GPS(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, MAX(0, 0), MIN(ud->num_sensors(), UINT8_MAX));
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     float data_5003 {};
@@ -5677,6 +5988,10 @@ static int AP_GPS_vertical_accuracy(lua_State *L) {
             data_5003));
 
     if (data) {
+#if 2 > LUA_MINSTACK
+        luaL_checkstack(L, 2, nullptr);
+#endif
+
         lua_pushnumber(L, data_5003);
         return 1;
     }
@@ -5686,8 +6001,8 @@ static int AP_GPS_vertical_accuracy(lua_State *L) {
 
 #if (AP_GPS_ENABLED && (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_GPS)))
 static int AP_GPS_horizontal_accuracy(lua_State *L) {
-    AP_GPS * ud = check_AP_GPS(L);
     binding_argcheck(L, 2);
+    AP_GPS * ud = check_AP_GPS(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, MAX(0, 0), MIN(ud->num_sensors(), UINT8_MAX));
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     float data_5003 {};
@@ -5696,6 +6011,10 @@ static int AP_GPS_horizontal_accuracy(lua_State *L) {
             data_5003));
 
     if (data) {
+#if 2 > LUA_MINSTACK
+        luaL_checkstack(L, 2, nullptr);
+#endif
+
         lua_pushnumber(L, data_5003);
         return 1;
     }
@@ -5705,8 +6024,8 @@ static int AP_GPS_horizontal_accuracy(lua_State *L) {
 
 #if (AP_GPS_ENABLED && (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_GPS)))
 static int AP_GPS_speed_accuracy(lua_State *L) {
-    AP_GPS * ud = check_AP_GPS(L);
     binding_argcheck(L, 2);
+    AP_GPS * ud = check_AP_GPS(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, MAX(0, 0), MIN(ud->num_sensors(), UINT8_MAX));
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     float data_5003 {};
@@ -5715,6 +6034,10 @@ static int AP_GPS_speed_accuracy(lua_State *L) {
             data_5003));
 
     if (data) {
+#if 2 > LUA_MINSTACK
+        luaL_checkstack(L, 2, nullptr);
+#endif
+
         lua_pushnumber(L, data_5003);
         return 1;
     }
@@ -5724,23 +6047,22 @@ static int AP_GPS_speed_accuracy(lua_State *L) {
 
 #if (AP_GPS_ENABLED && (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_GPS)))
 static int AP_GPS_location(lua_State *L) {
-    AP_GPS * ud = check_AP_GPS(L);
     binding_argcheck(L, 2);
+    AP_GPS * ud = check_AP_GPS(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, MAX(0, 0), MIN(ud->num_sensors(), UINT8_MAX));
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     const Location &data = ud->location(
             data_2);
 
-    new_Location(L);
-    *check_Location(L, -1) = data;
+    *new_Location(L) = data;
     return 1;
 }
 #endif // (AP_GPS_ENABLED && (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_GPS)))
 
 #if (AP_GPS_ENABLED && (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_GPS)))
 static int AP_GPS_status(lua_State *L) {
-    AP_GPS * ud = check_AP_GPS(L);
     binding_argcheck(L, 2);
+    AP_GPS * ud = check_AP_GPS(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, MAX(0, 0), MIN(ud->num_sensors(), UINT8_MAX));
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     const uint8_t data = static_cast<uint8_t>(ud->status(
@@ -5753,8 +6075,8 @@ static int AP_GPS_status(lua_State *L) {
 
 #if (AP_GPS_ENABLED && (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_GPS)))
 static int AP_GPS_primary_sensor(lua_State *L) {
-    AP_GPS * ud = check_AP_GPS(L);
     binding_argcheck(L, 1);
+    AP_GPS * ud = check_AP_GPS(L);
     const uint8_t data = static_cast<uint8_t>(ud->primary_sensor());
 
     lua_pushinteger(L, data);
@@ -5764,8 +6086,8 @@ static int AP_GPS_primary_sensor(lua_State *L) {
 
 #if (AP_GPS_ENABLED && (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_GPS)))
 static int AP_GPS_num_sensors(lua_State *L) {
-    AP_GPS * ud = check_AP_GPS(L);
     binding_argcheck(L, 1);
+    AP_GPS * ud = check_AP_GPS(L);
     const uint8_t data = static_cast<uint8_t>(ud->num_sensors());
 
     lua_pushinteger(L, data);
@@ -5776,8 +6098,8 @@ static int AP_GPS_num_sensors(lua_State *L) {
 #if AP_BATTERY_ENABLED
 #if AP_BATTERY_SCRIPTING_ENABLED
 static int AP_BattMonitor_handle_scripting(lua_State *L) {
-    AP_BattMonitor * ud = check_AP_BattMonitor(L);
     binding_argcheck(L, 3);
+    AP_BattMonitor * ud = check_AP_BattMonitor(L);
     const uint8_t raw_data_2 = get_uint8_t(L, 2);
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     BattMonitorScript_State & data_3 = *check_BattMonitorScript_State(L, 3);
@@ -5793,8 +6115,8 @@ static int AP_BattMonitor_handle_scripting(lua_State *L) {
 
 #if AP_BATTERY_ENABLED
 static int AP_BattMonitor_get_cell_voltage(lua_State *L) {
-    AP_BattMonitor * ud = check_AP_BattMonitor(L);
     binding_argcheck(L, 3);
+    AP_BattMonitor * ud = check_AP_BattMonitor(L);
     const uint8_t raw_data_2 = get_uint8_t(L, 2);
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     const uint8_t raw_data_3 = get_uint8_t(L, 3);
@@ -5806,6 +6128,10 @@ static int AP_BattMonitor_get_cell_voltage(lua_State *L) {
             data_5004));
 
     if (data) {
+#if 2 > LUA_MINSTACK
+        luaL_checkstack(L, 2, nullptr);
+#endif
+
         lua_pushnumber(L, data_5004);
         return 1;
     }
@@ -5815,8 +6141,8 @@ static int AP_BattMonitor_get_cell_voltage(lua_State *L) {
 
 #if AP_BATTERY_ENABLED
 static int AP_BattMonitor_reset_remaining(lua_State *L) {
-    AP_BattMonitor * ud = check_AP_BattMonitor(L);
     binding_argcheck(L, 3);
+    AP_BattMonitor * ud = check_AP_BattMonitor(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, MAX(0, 0), MIN(ud->num_instances(), UINT8_MAX));
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     const float raw_data_3 = get_number(L, 3, MAX(0, -INFINITY), MIN(100, INFINITY));
@@ -5832,8 +6158,8 @@ static int AP_BattMonitor_reset_remaining(lua_State *L) {
 
 #if AP_BATTERY_ENABLED
 static int AP_BattMonitor_get_cycle_count(lua_State *L) {
-    AP_BattMonitor * ud = check_AP_BattMonitor(L);
     binding_argcheck(L, 2);
+    AP_BattMonitor * ud = check_AP_BattMonitor(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, MAX(0, 0), MIN(ud->num_instances(), UINT8_MAX));
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     uint16_t data_5003 {};
@@ -5842,6 +6168,10 @@ static int AP_BattMonitor_get_cycle_count(lua_State *L) {
             data_5003));
 
     if (data) {
+#if 2 > LUA_MINSTACK
+        luaL_checkstack(L, 2, nullptr);
+#endif
+
         lua_pushinteger(L, data_5003);
         return 1;
     }
@@ -5851,8 +6181,8 @@ static int AP_BattMonitor_get_cycle_count(lua_State *L) {
 
 #if AP_BATTERY_ENABLED
 static int AP_BattMonitor_get_temperature(lua_State *L) {
-    AP_BattMonitor * ud = check_AP_BattMonitor(L);
     binding_argcheck(L, 2);
+    AP_BattMonitor * ud = check_AP_BattMonitor(L);
     float data_5002 {};
     const lua_Integer raw_data_3 = get_integer(L, 2, MAX(0, 0), MIN(ud->num_instances(), UINT8_MAX));
     const uint8_t data_3 = static_cast<uint8_t>(raw_data_3);
@@ -5861,6 +6191,10 @@ static int AP_BattMonitor_get_temperature(lua_State *L) {
             data_3));
 
     if (data) {
+#if 2 > LUA_MINSTACK
+        luaL_checkstack(L, 2, nullptr);
+#endif
+
         lua_pushnumber(L, data_5002);
         return 1;
     }
@@ -5870,8 +6204,8 @@ static int AP_BattMonitor_get_temperature(lua_State *L) {
 
 #if AP_BATTERY_ENABLED
 static int AP_BattMonitor_overpower_detected(lua_State *L) {
-    AP_BattMonitor * ud = check_AP_BattMonitor(L);
     binding_argcheck(L, 2);
+    AP_BattMonitor * ud = check_AP_BattMonitor(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, MAX(0, 0), MIN(ud->num_instances(), UINT8_MAX));
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     const bool data = static_cast<bool>(ud->overpower_detected(
@@ -5884,8 +6218,8 @@ static int AP_BattMonitor_overpower_detected(lua_State *L) {
 
 #if AP_BATTERY_ENABLED
 static int AP_BattMonitor_has_failsafed(lua_State *L) {
-    AP_BattMonitor * ud = check_AP_BattMonitor(L);
     binding_argcheck(L, 1);
+    AP_BattMonitor * ud = check_AP_BattMonitor(L);
     const bool data = static_cast<bool>(ud->has_failsafed());
 
     lua_pushboolean(L, data);
@@ -5895,8 +6229,8 @@ static int AP_BattMonitor_has_failsafed(lua_State *L) {
 
 #if AP_BATTERY_ENABLED
 static int AP_BattMonitor_pack_capacity_mah(lua_State *L) {
-    AP_BattMonitor * ud = check_AP_BattMonitor(L);
     binding_argcheck(L, 2);
+    AP_BattMonitor * ud = check_AP_BattMonitor(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, MAX(0, 0), MIN(ud->num_instances(), UINT8_MAX));
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     const int32_t data = static_cast<int32_t>(ud->pack_capacity_mah(
@@ -5909,8 +6243,8 @@ static int AP_BattMonitor_pack_capacity_mah(lua_State *L) {
 
 #if AP_BATTERY_ENABLED
 static int AP_BattMonitor_capacity_remaining_pct(lua_State *L) {
-    AP_BattMonitor * ud = check_AP_BattMonitor(L);
     binding_argcheck(L, 2);
+    AP_BattMonitor * ud = check_AP_BattMonitor(L);
     uint8_t data_5002 {};
     const lua_Integer raw_data_3 = get_integer(L, 2, MAX(0, 0), MIN(ud->num_instances(), UINT8_MAX));
     const uint8_t data_3 = static_cast<uint8_t>(raw_data_3);
@@ -5919,6 +6253,10 @@ static int AP_BattMonitor_capacity_remaining_pct(lua_State *L) {
             data_3));
 
     if (data) {
+#if 2 > LUA_MINSTACK
+        luaL_checkstack(L, 2, nullptr);
+#endif
+
         lua_pushinteger(L, data_5002);
         return 1;
     }
@@ -5928,8 +6266,8 @@ static int AP_BattMonitor_capacity_remaining_pct(lua_State *L) {
 
 #if AP_BATTERY_ENABLED
 static int AP_BattMonitor_consumed_wh(lua_State *L) {
-    AP_BattMonitor * ud = check_AP_BattMonitor(L);
     binding_argcheck(L, 2);
+    AP_BattMonitor * ud = check_AP_BattMonitor(L);
     float data_5002 {};
     const lua_Integer raw_data_3 = get_integer(L, 2, MAX(0, 0), MIN(ud->num_instances(), UINT8_MAX));
     const uint8_t data_3 = static_cast<uint8_t>(raw_data_3);
@@ -5938,6 +6276,10 @@ static int AP_BattMonitor_consumed_wh(lua_State *L) {
             data_3));
 
     if (data) {
+#if 2 > LUA_MINSTACK
+        luaL_checkstack(L, 2, nullptr);
+#endif
+
         lua_pushnumber(L, data_5002);
         return 1;
     }
@@ -5947,8 +6289,8 @@ static int AP_BattMonitor_consumed_wh(lua_State *L) {
 
 #if AP_BATTERY_ENABLED
 static int AP_BattMonitor_consumed_mah(lua_State *L) {
-    AP_BattMonitor * ud = check_AP_BattMonitor(L);
     binding_argcheck(L, 2);
+    AP_BattMonitor * ud = check_AP_BattMonitor(L);
     float data_5002 {};
     const lua_Integer raw_data_3 = get_integer(L, 2, MAX(0, 0), MIN(ud->num_instances(), UINT8_MAX));
     const uint8_t data_3 = static_cast<uint8_t>(raw_data_3);
@@ -5957,6 +6299,10 @@ static int AP_BattMonitor_consumed_mah(lua_State *L) {
             data_3));
 
     if (data) {
+#if 2 > LUA_MINSTACK
+        luaL_checkstack(L, 2, nullptr);
+#endif
+
         lua_pushnumber(L, data_5002);
         return 1;
     }
@@ -5966,8 +6312,8 @@ static int AP_BattMonitor_consumed_mah(lua_State *L) {
 
 #if AP_BATTERY_ENABLED
 static int AP_BattMonitor_current_amps(lua_State *L) {
-    AP_BattMonitor * ud = check_AP_BattMonitor(L);
     binding_argcheck(L, 2);
+    AP_BattMonitor * ud = check_AP_BattMonitor(L);
     float data_5002 {};
     const lua_Integer raw_data_3 = get_integer(L, 2, MAX(0, 0), MIN(ud->num_instances(), UINT8_MAX));
     const uint8_t data_3 = static_cast<uint8_t>(raw_data_3);
@@ -5976,6 +6322,10 @@ static int AP_BattMonitor_current_amps(lua_State *L) {
             data_3));
 
     if (data) {
+#if 2 > LUA_MINSTACK
+        luaL_checkstack(L, 2, nullptr);
+#endif
+
         lua_pushnumber(L, data_5002);
         return 1;
     }
@@ -5985,8 +6335,8 @@ static int AP_BattMonitor_current_amps(lua_State *L) {
 
 #if AP_BATTERY_ENABLED
 static int AP_BattMonitor_voltage_resting_estimate(lua_State *L) {
-    AP_BattMonitor * ud = check_AP_BattMonitor(L);
     binding_argcheck(L, 2);
+    AP_BattMonitor * ud = check_AP_BattMonitor(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, MAX(0, 0), MIN(ud->num_instances(), UINT8_MAX));
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     const float data = static_cast<float>(ud->voltage_resting_estimate(
@@ -5998,9 +6348,23 @@ static int AP_BattMonitor_voltage_resting_estimate(lua_State *L) {
 #endif // AP_BATTERY_ENABLED
 
 #if AP_BATTERY_ENABLED
-static int AP_BattMonitor_voltage(lua_State *L) {
-    AP_BattMonitor * ud = check_AP_BattMonitor(L);
+static int AP_BattMonitor_get_resistance(lua_State *L) {
     binding_argcheck(L, 2);
+    AP_BattMonitor * ud = check_AP_BattMonitor(L);
+    const lua_Integer raw_data_2 = get_integer(L, 2, MAX(0, 0), MIN(ud->num_instances(), UINT8_MAX));
+    const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
+    const float data = static_cast<float>(ud->get_resistance(
+            data_2));
+
+    lua_pushnumber(L, data);
+    return 1;
+}
+#endif // AP_BATTERY_ENABLED
+
+#if AP_BATTERY_ENABLED
+static int AP_BattMonitor_voltage(lua_State *L) {
+    binding_argcheck(L, 2);
+    AP_BattMonitor * ud = check_AP_BattMonitor(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, MAX(0, 0), MIN(ud->num_instances(), UINT8_MAX));
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     const float data = static_cast<float>(ud->voltage(
@@ -6013,8 +6377,8 @@ static int AP_BattMonitor_voltage(lua_State *L) {
 
 #if AP_BATTERY_ENABLED
 static int AP_BattMonitor_healthy(lua_State *L) {
-    AP_BattMonitor * ud = check_AP_BattMonitor(L);
     binding_argcheck(L, 2);
+    AP_BattMonitor * ud = check_AP_BattMonitor(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, MAX(0, 0), MIN(ud->num_instances(), UINT8_MAX));
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     const bool data = static_cast<bool>(ud->healthy(
@@ -6027,8 +6391,8 @@ static int AP_BattMonitor_healthy(lua_State *L) {
 
 #if AP_BATTERY_ENABLED
 static int AP_BattMonitor_num_instances(lua_State *L) {
-    AP_BattMonitor * ud = check_AP_BattMonitor(L);
     binding_argcheck(L, 1);
+    AP_BattMonitor * ud = check_AP_BattMonitor(L);
     const uint8_t data = static_cast<uint8_t>(ud->num_instances());
 
     lua_pushinteger(L, data);
@@ -6036,10 +6400,10 @@ static int AP_BattMonitor_num_instances(lua_State *L) {
 }
 #endif // AP_BATTERY_ENABLED
 
-#if (!defined(HAL_BUILD_AP_PERIPH))
+#if AP_ARMING_ENABLED
 static int AP_Arming_set_aux_auth_failed(lua_State *L) {
-    AP_Arming * ud = check_AP_Arming(L);
     binding_argcheck(L, 3);
+    AP_Arming * ud = check_AP_Arming(L);
     const uint8_t raw_data_2 = get_uint8_t(L, 2);
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     const char * data_3 = luaL_checkstring(L, 3);
@@ -6049,12 +6413,12 @@ static int AP_Arming_set_aux_auth_failed(lua_State *L) {
 
     return 0;
 }
-#endif // (!defined(HAL_BUILD_AP_PERIPH))
+#endif // AP_ARMING_ENABLED
 
-#if (!defined(HAL_BUILD_AP_PERIPH))
+#if AP_ARMING_ENABLED
 static int AP_Arming_set_aux_auth_passed(lua_State *L) {
-    AP_Arming * ud = check_AP_Arming(L);
     binding_argcheck(L, 2);
+    AP_Arming * ud = check_AP_Arming(L);
     const uint8_t raw_data_2 = get_uint8_t(L, 2);
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     ud->set_aux_auth_passed(
@@ -6062,72 +6426,87 @@ static int AP_Arming_set_aux_auth_passed(lua_State *L) {
 
     return 0;
 }
-#endif // (!defined(HAL_BUILD_AP_PERIPH))
+#endif // AP_ARMING_ENABLED
 
-#if (!defined(HAL_BUILD_AP_PERIPH))
+#if AP_ARMING_ENABLED
 static int AP_Arming_get_aux_auth_id(lua_State *L) {
-    AP_Arming * ud = check_AP_Arming(L);
     binding_argcheck(L, 1);
+    AP_Arming * ud = check_AP_Arming(L);
     uint8_t data_5002 {};
     const bool data = static_cast<bool>(ud->get_aux_auth_id(
             data_5002));
 
     if (data) {
+#if 2 > LUA_MINSTACK
+        luaL_checkstack(L, 2, nullptr);
+#endif
+
         lua_pushinteger(L, data_5002);
         return 1;
     }
     return 0;
 }
-#endif // (!defined(HAL_BUILD_AP_PERIPH))
+#endif // AP_ARMING_ENABLED
 
-#if (!defined(HAL_BUILD_AP_PERIPH))
-static int AP_Arming_arm(lua_State *L) {
-    AP_Arming * ud = check_AP_Arming(L);
+#if AP_ARMING_ENABLED
+static int AP_Arming_arm_force(lua_State *L) {
     binding_argcheck(L, 1);
+    AP_Arming * ud = check_AP_Arming(L);
+    const bool data = static_cast<bool>(ud->arm_force(            AP_Arming::Method::SCRIPTING));
+
+    lua_pushboolean(L, data);
+    return 1;
+}
+#endif // AP_ARMING_ENABLED
+
+#if AP_ARMING_ENABLED
+static int AP_Arming_arm(lua_State *L) {
+    binding_argcheck(L, 1);
+    AP_Arming * ud = check_AP_Arming(L);
     const bool data = static_cast<bool>(ud->arm(            AP_Arming::Method::SCRIPTING));
 
     lua_pushboolean(L, data);
     return 1;
 }
-#endif // (!defined(HAL_BUILD_AP_PERIPH))
+#endif // AP_ARMING_ENABLED
 
-#if (!defined(HAL_BUILD_AP_PERIPH))
+#if AP_ARMING_ENABLED
 static int AP_Arming_pre_arm_checks(lua_State *L) {
-    AP_Arming * ud = check_AP_Arming(L);
     binding_argcheck(L, 1);
+    AP_Arming * ud = check_AP_Arming(L);
     const bool data = static_cast<bool>(ud->pre_arm_checks(            false));
 
     lua_pushboolean(L, data);
     return 1;
 }
-#endif // (!defined(HAL_BUILD_AP_PERIPH))
+#endif // AP_ARMING_ENABLED
 
-#if (!defined(HAL_BUILD_AP_PERIPH))
+#if AP_ARMING_ENABLED
 static int AP_Arming_is_armed(lua_State *L) {
-    AP_Arming * ud = check_AP_Arming(L);
     binding_argcheck(L, 1);
+    AP_Arming * ud = check_AP_Arming(L);
     const bool data = static_cast<bool>(ud->is_armed());
 
     lua_pushboolean(L, data);
     return 1;
 }
-#endif // (!defined(HAL_BUILD_AP_PERIPH))
+#endif // AP_ARMING_ENABLED
 
-#if (!defined(HAL_BUILD_AP_PERIPH))
+#if AP_ARMING_ENABLED
 static int AP_Arming_disarm(lua_State *L) {
-    AP_Arming * ud = check_AP_Arming(L);
     binding_argcheck(L, 1);
+    AP_Arming * ud = check_AP_Arming(L);
     const bool data = static_cast<bool>(ud->disarm(            AP_Arming::Method::SCRIPTING));
 
     lua_pushboolean(L, data);
     return 1;
 }
-#endif // (!defined(HAL_BUILD_AP_PERIPH))
+#endif // AP_ARMING_ENABLED
 
 #if AP_AHRS_ENABLED
 static int AP_AHRS_get_quaternion(lua_State *L) {
-    AP_AHRS * ud = check_AP_AHRS(L);
     binding_argcheck(L, 1);
+    AP_AHRS * ud = check_AP_AHRS(L);
     Quaternion data_5002 {};
     ud->get_semaphore().take_blocking();
     const bool data = static_cast<bool>(ud->get_quaternion(
@@ -6135,8 +6514,11 @@ static int AP_AHRS_get_quaternion(lua_State *L) {
 
     ud->get_semaphore().give();
     if (data) {
-        new_Quaternion(L);
-        *check_Quaternion(L, -1) = data_5002;
+#if 2 > LUA_MINSTACK
+        luaL_checkstack(L, 2, nullptr);
+#endif
+
+        *new_Quaternion(L) = data_5002;
         return 1;
     }
     return 0;
@@ -6145,8 +6527,8 @@ static int AP_AHRS_get_quaternion(lua_State *L) {
 
 #if AP_AHRS_ENABLED
 static int AP_AHRS_get_posvelyaw_source_set(lua_State *L) {
-    AP_AHRS * ud = check_AP_AHRS(L);
     binding_argcheck(L, 1);
+    AP_AHRS * ud = check_AP_AHRS(L);
     ud->get_semaphore().take_blocking();
     const uint8_t data = static_cast<uint8_t>(ud->get_posvelyaw_source_set());
 
@@ -6158,8 +6540,8 @@ static int AP_AHRS_get_posvelyaw_source_set(lua_State *L) {
 
 #if AP_AHRS_ENABLED
 static int AP_AHRS_initialised(lua_State *L) {
-    AP_AHRS * ud = check_AP_AHRS(L);
     binding_argcheck(L, 1);
+    AP_AHRS * ud = check_AP_AHRS(L);
     ud->get_semaphore().take_blocking();
     const bool data = static_cast<bool>(ud->initialised());
 
@@ -6171,8 +6553,8 @@ static int AP_AHRS_initialised(lua_State *L) {
 
 #if AP_AHRS_ENABLED
 static int AP_AHRS_set_origin(lua_State *L) {
-    AP_AHRS * ud = check_AP_AHRS(L);
     binding_argcheck(L, 2);
+    AP_AHRS * ud = check_AP_AHRS(L);
     Location & data_2 = *check_Location(L, 2);
     ud->get_semaphore().take_blocking();
     const bool data = static_cast<bool>(ud->set_origin(
@@ -6186,8 +6568,8 @@ static int AP_AHRS_set_origin(lua_State *L) {
 
 #if AP_AHRS_ENABLED
 static int AP_AHRS_get_origin(lua_State *L) {
-    AP_AHRS * ud = check_AP_AHRS(L);
     binding_argcheck(L, 1);
+    AP_AHRS * ud = check_AP_AHRS(L);
     Location data_5002 {};
     ud->get_semaphore().take_blocking();
     const bool data = static_cast<bool>(ud->get_origin(
@@ -6195,8 +6577,11 @@ static int AP_AHRS_get_origin(lua_State *L) {
 
     ud->get_semaphore().give();
     if (data) {
-        new_Location(L);
-        *check_Location(L, -1) = data_5002;
+#if 2 > LUA_MINSTACK
+        luaL_checkstack(L, 2, nullptr);
+#endif
+
+        *new_Location(L) = data_5002;
         return 1;
     }
     return 0;
@@ -6205,8 +6590,8 @@ static int AP_AHRS_get_origin(lua_State *L) {
 
 #if AP_AHRS_ENABLED
 static int AP_AHRS_set_home(lua_State *L) {
-    AP_AHRS * ud = check_AP_AHRS(L);
     binding_argcheck(L, 2);
+    AP_AHRS * ud = check_AP_AHRS(L);
     Location & data_2 = *check_Location(L, 2);
     ud->get_semaphore().take_blocking();
     const bool data = static_cast<bool>(ud->set_home(
@@ -6220,8 +6605,8 @@ static int AP_AHRS_set_home(lua_State *L) {
 
 #if AP_AHRS_ENABLED
 static int AP_AHRS_get_vel_innovations_and_variances_for_source(lua_State *L) {
-    AP_AHRS * ud = check_AP_AHRS(L);
     binding_argcheck(L, 2);
+    AP_AHRS * ud = check_AP_AHRS(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, MAX(3, 0), MIN(6, UINT8_MAX));
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     Vector3f data_5003 {};
@@ -6234,10 +6619,12 @@ static int AP_AHRS_get_vel_innovations_and_variances_for_source(lua_State *L) {
 
     ud->get_semaphore().give();
     if (data) {
-        new_Vector3f(L);
-        *check_Vector3f(L, -1) = data_5003;
-        new_Vector3f(L);
-        *check_Vector3f(L, -1) = data_5004;
+#if 3 > LUA_MINSTACK
+        luaL_checkstack(L, 3, nullptr);
+#endif
+
+        *new_Vector3f(L) = data_5003;
+        *new_Vector3f(L) = data_5004;
         return 2;
     }
     return 0;
@@ -6246,8 +6633,8 @@ static int AP_AHRS_get_vel_innovations_and_variances_for_source(lua_State *L) {
 
 #if AP_AHRS_ENABLED
 static int AP_AHRS_set_posvelyaw_source_set(lua_State *L) {
-    AP_AHRS * ud = check_AP_AHRS(L);
     binding_argcheck(L, 2);
+    AP_AHRS * ud = check_AP_AHRS(L);
     const lua_Integer raw_data_2 = get_integer(L, 2, MAX(0, 0), MIN(2, UINT8_MAX));
     const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
     ud->get_semaphore().take_blocking();
@@ -6261,8 +6648,8 @@ static int AP_AHRS_set_posvelyaw_source_set(lua_State *L) {
 
 #if AP_AHRS_ENABLED
 static int AP_AHRS_get_variances(lua_State *L) {
-    AP_AHRS * ud = check_AP_AHRS(L);
     binding_argcheck(L, 1);
+    AP_AHRS * ud = check_AP_AHRS(L);
     float data_5002 {};
     float data_5003 {};
     float data_5004 {};
@@ -6278,11 +6665,14 @@ static int AP_AHRS_get_variances(lua_State *L) {
 
     ud->get_semaphore().give();
     if (data) {
+#if 6 > LUA_MINSTACK
+        luaL_checkstack(L, 6, nullptr);
+#endif
+
         lua_pushnumber(L, data_5002);
         lua_pushnumber(L, data_5003);
         lua_pushnumber(L, data_5004);
-        new_Vector3f(L);
-        *check_Vector3f(L, -1) = data_5005;
+        *new_Vector3f(L) = data_5005;
         lua_pushnumber(L, data_5006);
         return 5;
     }
@@ -6292,8 +6682,8 @@ static int AP_AHRS_get_variances(lua_State *L) {
 
 #if AP_AHRS_ENABLED
 static int AP_AHRS_get_EAS2TAS(lua_State *L) {
-    AP_AHRS * ud = check_AP_AHRS(L);
     binding_argcheck(L, 1);
+    AP_AHRS * ud = check_AP_AHRS(L);
     ud->get_semaphore().take_blocking();
     const float data = static_cast<float>(ud->get_EAS2TAS());
 
@@ -6305,54 +6695,51 @@ static int AP_AHRS_get_EAS2TAS(lua_State *L) {
 
 #if AP_AHRS_ENABLED
 static int AP_AHRS_body_to_earth(lua_State *L) {
-    AP_AHRS * ud = check_AP_AHRS(L);
     binding_argcheck(L, 2);
+    AP_AHRS * ud = check_AP_AHRS(L);
     Vector3f & data_2 = *check_Vector3f(L, 2);
     ud->get_semaphore().take_blocking();
     const Vector3f &data = ud->body_to_earth(
             data_2);
 
     ud->get_semaphore().give();
-    new_Vector3f(L);
-    *check_Vector3f(L, -1) = data;
+    *new_Vector3f(L) = data;
     return 1;
 }
 #endif // AP_AHRS_ENABLED
 
 #if AP_AHRS_ENABLED
 static int AP_AHRS_earth_to_body(lua_State *L) {
-    AP_AHRS * ud = check_AP_AHRS(L);
     binding_argcheck(L, 2);
+    AP_AHRS * ud = check_AP_AHRS(L);
     Vector3f & data_2 = *check_Vector3f(L, 2);
     ud->get_semaphore().take_blocking();
     const Vector3f &data = ud->earth_to_body(
             data_2);
 
     ud->get_semaphore().give();
-    new_Vector3f(L);
-    *check_Vector3f(L, -1) = data;
+    *new_Vector3f(L) = data;
     return 1;
 }
 #endif // AP_AHRS_ENABLED
 
 #if AP_AHRS_ENABLED
 static int AP_AHRS_get_vibration(lua_State *L) {
-    AP_AHRS * ud = check_AP_AHRS(L);
     binding_argcheck(L, 1);
+    AP_AHRS * ud = check_AP_AHRS(L);
     ud->get_semaphore().take_blocking();
     const Vector3f &data = ud->get_vibration();
 
     ud->get_semaphore().give();
-    new_Vector3f(L);
-    *check_Vector3f(L, -1) = data;
+    *new_Vector3f(L) = data;
     return 1;
 }
 #endif // AP_AHRS_ENABLED
 
 #if AP_AHRS_ENABLED
 static int AP_AHRS_airspeed_estimate(lua_State *L) {
-    AP_AHRS * ud = check_AP_AHRS(L);
     binding_argcheck(L, 1);
+    AP_AHRS * ud = check_AP_AHRS(L);
     float data_5002 {};
     ud->get_semaphore().take_blocking();
     const bool data = static_cast<bool>(ud->airspeed_estimate(
@@ -6360,6 +6747,10 @@ static int AP_AHRS_airspeed_estimate(lua_State *L) {
 
     ud->get_semaphore().give();
     if (data) {
+#if 2 > LUA_MINSTACK
+        luaL_checkstack(L, 2, nullptr);
+#endif
+
         lua_pushnumber(L, data_5002);
         return 1;
     }
@@ -6369,8 +6760,8 @@ static int AP_AHRS_airspeed_estimate(lua_State *L) {
 
 #if AP_AHRS_ENABLED
 static int AP_AHRS_healthy(lua_State *L) {
-    AP_AHRS * ud = check_AP_AHRS(L);
     binding_argcheck(L, 1);
+    AP_AHRS * ud = check_AP_AHRS(L);
     ud->get_semaphore().take_blocking();
     const bool data = static_cast<bool>(ud->healthy());
 
@@ -6382,8 +6773,8 @@ static int AP_AHRS_healthy(lua_State *L) {
 
 #if AP_AHRS_ENABLED
 static int AP_AHRS_home_is_set(lua_State *L) {
-    AP_AHRS * ud = check_AP_AHRS(L);
     binding_argcheck(L, 1);
+    AP_AHRS * ud = check_AP_AHRS(L);
     ud->get_semaphore().take_blocking();
     const bool data = static_cast<bool>(ud->home_is_set());
 
@@ -6395,14 +6786,18 @@ static int AP_AHRS_home_is_set(lua_State *L) {
 
 #if AP_AHRS_ENABLED
 static int AP_AHRS_get_relative_position_D_home(lua_State *L) {
-    AP_AHRS * ud = check_AP_AHRS(L);
     binding_argcheck(L, 1);
+    AP_AHRS * ud = check_AP_AHRS(L);
     float data_5002 {};
     ud->get_semaphore().take_blocking();
     ud->get_relative_position_D_home(
             data_5002);
 
     ud->get_semaphore().give();
+#if 2 > LUA_MINSTACK
+    luaL_checkstack(L, 2, nullptr);
+#endif
+
     lua_pushnumber(L, data_5002);
     return 1;
 }
@@ -6410,8 +6805,8 @@ static int AP_AHRS_get_relative_position_D_home(lua_State *L) {
 
 #if AP_AHRS_ENABLED
 static int AP_AHRS_get_relative_position_NED_origin(lua_State *L) {
-    AP_AHRS * ud = check_AP_AHRS(L);
     binding_argcheck(L, 1);
+    AP_AHRS * ud = check_AP_AHRS(L);
     Vector3f data_5002 {};
     ud->get_semaphore().take_blocking();
     const bool data = static_cast<bool>(ud->get_relative_position_NED_origin(
@@ -6419,8 +6814,11 @@ static int AP_AHRS_get_relative_position_NED_origin(lua_State *L) {
 
     ud->get_semaphore().give();
     if (data) {
-        new_Vector3f(L);
-        *check_Vector3f(L, -1) = data_5002;
+#if 2 > LUA_MINSTACK
+        luaL_checkstack(L, 2, nullptr);
+#endif
+
+        *new_Vector3f(L) = data_5002;
         return 1;
     }
     return 0;
@@ -6429,8 +6827,8 @@ static int AP_AHRS_get_relative_position_NED_origin(lua_State *L) {
 
 #if AP_AHRS_ENABLED
 static int AP_AHRS_get_relative_position_NED_home(lua_State *L) {
-    AP_AHRS * ud = check_AP_AHRS(L);
     binding_argcheck(L, 1);
+    AP_AHRS * ud = check_AP_AHRS(L);
     Vector3f data_5002 {};
     ud->get_semaphore().take_blocking();
     const bool data = static_cast<bool>(ud->get_relative_position_NED_home(
@@ -6438,8 +6836,11 @@ static int AP_AHRS_get_relative_position_NED_home(lua_State *L) {
 
     ud->get_semaphore().give();
     if (data) {
-        new_Vector3f(L);
-        *check_Vector3f(L, -1) = data_5002;
+#if 2 > LUA_MINSTACK
+        luaL_checkstack(L, 2, nullptr);
+#endif
+
+        *new_Vector3f(L) = data_5002;
         return 1;
     }
     return 0;
@@ -6448,8 +6849,8 @@ static int AP_AHRS_get_relative_position_NED_home(lua_State *L) {
 
 #if AP_AHRS_ENABLED
 static int AP_AHRS_get_velocity_NED(lua_State *L) {
-    AP_AHRS * ud = check_AP_AHRS(L);
     binding_argcheck(L, 1);
+    AP_AHRS * ud = check_AP_AHRS(L);
     Vector3f data_5002 {};
     ud->get_semaphore().take_blocking();
     const bool data = static_cast<bool>(ud->get_velocity_NED(
@@ -6457,8 +6858,11 @@ static int AP_AHRS_get_velocity_NED(lua_State *L) {
 
     ud->get_semaphore().give();
     if (data) {
-        new_Vector3f(L);
-        *check_Vector3f(L, -1) = data_5002;
+#if 2 > LUA_MINSTACK
+        luaL_checkstack(L, 2, nullptr);
+#endif
+
+        *new_Vector3f(L) = data_5002;
         return 1;
     }
     return 0;
@@ -6467,22 +6871,21 @@ static int AP_AHRS_get_velocity_NED(lua_State *L) {
 
 #if AP_AHRS_ENABLED
 static int AP_AHRS_groundspeed_vector(lua_State *L) {
-    AP_AHRS * ud = check_AP_AHRS(L);
     binding_argcheck(L, 1);
+    AP_AHRS * ud = check_AP_AHRS(L);
     ud->get_semaphore().take_blocking();
     const Vector2f &data = ud->groundspeed_vector();
 
     ud->get_semaphore().give();
-    new_Vector2f(L);
-    *check_Vector2f(L, -1) = data;
+    *new_Vector2f(L) = data;
     return 1;
 }
 #endif // AP_AHRS_ENABLED
 
 #if AP_AHRS_ENABLED
 static int AP_AHRS_head_wind(lua_State *L) {
-    AP_AHRS * ud = check_AP_AHRS(L);
     binding_argcheck(L, 1);
+    AP_AHRS * ud = check_AP_AHRS(L);
     ud->get_semaphore().take_blocking();
     const float data = static_cast<float>(ud->head_wind());
 
@@ -6494,8 +6897,8 @@ static int AP_AHRS_head_wind(lua_State *L) {
 
 #if AP_AHRS_ENABLED
 static int AP_AHRS_wind_alignment(lua_State *L) {
-    AP_AHRS * ud = check_AP_AHRS(L);
     binding_argcheck(L, 2);
+    AP_AHRS * ud = check_AP_AHRS(L);
     const float raw_data_2 = luaL_checknumber(L, 2);
     const float data_2 = raw_data_2;
     ud->get_semaphore().take_blocking();
@@ -6510,22 +6913,21 @@ static int AP_AHRS_wind_alignment(lua_State *L) {
 
 #if AP_AHRS_ENABLED
 static int AP_AHRS_wind_estimate(lua_State *L) {
-    AP_AHRS * ud = check_AP_AHRS(L);
     binding_argcheck(L, 1);
+    AP_AHRS * ud = check_AP_AHRS(L);
     ud->get_semaphore().take_blocking();
     const Vector3f &data = ud->wind_estimate();
 
     ud->get_semaphore().give();
-    new_Vector3f(L);
-    *check_Vector3f(L, -1) = data;
+    *new_Vector3f(L) = data;
     return 1;
 }
 #endif // AP_AHRS_ENABLED
 
 #if AP_AHRS_ENABLED
 static int AP_AHRS_get_hagl(lua_State *L) {
-    AP_AHRS * ud = check_AP_AHRS(L);
     binding_argcheck(L, 1);
+    AP_AHRS * ud = check_AP_AHRS(L);
     float data_5002 {};
     ud->get_semaphore().take_blocking();
     const bool data = static_cast<bool>(ud->get_hagl(
@@ -6533,6 +6935,10 @@ static int AP_AHRS_get_hagl(lua_State *L) {
 
     ud->get_semaphore().give();
     if (data) {
+#if 2 > LUA_MINSTACK
+        luaL_checkstack(L, 2, nullptr);
+#endif
+
         lua_pushnumber(L, data_5002);
         return 1;
     }
@@ -6542,50 +6948,47 @@ static int AP_AHRS_get_hagl(lua_State *L) {
 
 #if AP_AHRS_ENABLED
 static int AP_AHRS_get_accel(lua_State *L) {
-    AP_AHRS * ud = check_AP_AHRS(L);
     binding_argcheck(L, 1);
+    AP_AHRS * ud = check_AP_AHRS(L);
     ud->get_semaphore().take_blocking();
     const Vector3f &data = ud->get_accel();
 
     ud->get_semaphore().give();
-    new_Vector3f(L);
-    *check_Vector3f(L, -1) = data;
+    *new_Vector3f(L) = data;
     return 1;
 }
 #endif // AP_AHRS_ENABLED
 
 #if AP_AHRS_ENABLED
 static int AP_AHRS_get_gyro(lua_State *L) {
-    AP_AHRS * ud = check_AP_AHRS(L);
     binding_argcheck(L, 1);
+    AP_AHRS * ud = check_AP_AHRS(L);
     ud->get_semaphore().take_blocking();
     const Vector3f &data = ud->get_gyro();
 
     ud->get_semaphore().give();
-    new_Vector3f(L);
-    *check_Vector3f(L, -1) = data;
+    *new_Vector3f(L) = data;
     return 1;
 }
 #endif // AP_AHRS_ENABLED
 
 #if AP_AHRS_ENABLED
 static int AP_AHRS_get_home(lua_State *L) {
-    AP_AHRS * ud = check_AP_AHRS(L);
     binding_argcheck(L, 1);
+    AP_AHRS * ud = check_AP_AHRS(L);
     ud->get_semaphore().take_blocking();
     const Location &data = ud->get_home();
 
     ud->get_semaphore().give();
-    new_Location(L);
-    *check_Location(L, -1) = data;
+    *new_Location(L) = data;
     return 1;
 }
 #endif // AP_AHRS_ENABLED
 
 #if AP_AHRS_ENABLED
 static int AP_AHRS_get_location(lua_State *L) {
-    AP_AHRS * ud = check_AP_AHRS(L);
     binding_argcheck(L, 1);
+    AP_AHRS * ud = check_AP_AHRS(L);
     Location data_5002 {};
     ud->get_semaphore().take_blocking();
     const bool data = static_cast<bool>(ud->get_location(
@@ -6593,8 +6996,11 @@ static int AP_AHRS_get_location(lua_State *L) {
 
     ud->get_semaphore().give();
     if (data) {
-        new_Location(L);
-        *check_Location(L, -1) = data_5002;
+#if 2 > LUA_MINSTACK
+        luaL_checkstack(L, 2, nullptr);
+#endif
+
+        *new_Location(L) = data_5002;
         return 1;
     }
     return 0;
@@ -6603,8 +7009,8 @@ static int AP_AHRS_get_location(lua_State *L) {
 
 #if AP_AHRS_ENABLED
 static int AP_AHRS_get_yaw(lua_State *L) {
-    AP_AHRS * ud = check_AP_AHRS(L);
     binding_argcheck(L, 1);
+    AP_AHRS * ud = check_AP_AHRS(L);
     ud->get_semaphore().take_blocking();
     const float data = static_cast<float>(ud->get_yaw());
 
@@ -6616,8 +7022,8 @@ static int AP_AHRS_get_yaw(lua_State *L) {
 
 #if AP_AHRS_ENABLED
 static int AP_AHRS_get_pitch(lua_State *L) {
-    AP_AHRS * ud = check_AP_AHRS(L);
     binding_argcheck(L, 1);
+    AP_AHRS * ud = check_AP_AHRS(L);
     ud->get_semaphore().take_blocking();
     const float data = static_cast<float>(ud->get_pitch());
 
@@ -6629,8 +7035,8 @@ static int AP_AHRS_get_pitch(lua_State *L) {
 
 #if AP_AHRS_ENABLED
 static int AP_AHRS_get_roll(lua_State *L) {
-    AP_AHRS * ud = check_AP_AHRS(L);
     binding_argcheck(L, 1);
+    AP_AHRS * ud = check_AP_AHRS(L);
     ud->get_semaphore().take_blocking();
     const float data = static_cast<float>(ud->get_roll());
 
@@ -6639,6 +7045,17 @@ static int AP_AHRS_get_roll(lua_State *L) {
     return 1;
 }
 #endif // AP_AHRS_ENABLED
+
+#if HAL_VISUALODOM_ENABLED
+const luaL_Reg AP_VisualOdom_meta[] = {
+    {"quality", AP_VisualOdom_quality},
+    {"healthy", AP_VisualOdom_healthy},
+};
+
+static int AP_VisualOdom_index(lua_State *L) {
+    return load_function(L,AP_VisualOdom_meta,ARRAY_SIZE(AP_VisualOdom_meta));
+}
+#endif // HAL_VISUALODOM_ENABLED
 
 #if AP_NETWORKING_ENABLED
 const luaL_Reg AP_Networking_meta[] = {
@@ -6649,11 +7066,7 @@ const luaL_Reg AP_Networking_meta[] = {
 };
 
 static int AP_Networking_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,AP_Networking_meta,ARRAY_SIZE(AP_Networking_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,AP_Networking_meta,ARRAY_SIZE(AP_Networking_meta));
 }
 #endif // AP_NETWORKING_ENABLED
 
@@ -6664,11 +7077,7 @@ const luaL_Reg AP_RTC_meta[] = {
 };
 
 static int AP_RTC_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,AP_RTC_meta,ARRAY_SIZE(AP_RTC_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,AP_RTC_meta,ARRAY_SIZE(AP_RTC_meta));
 }
 #endif // AP_RTC_ENABLED
 
@@ -6684,11 +7093,7 @@ const luaL_Reg AP_Filesystem_meta[] = {
 };
 
 static int AP_Filesystem_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,AP_Filesystem_meta,ARRAY_SIZE(AP_Filesystem_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,AP_Filesystem_meta,ARRAY_SIZE(AP_Filesystem_meta));
 }
 
 #if AP_FENCE_ENABLED
@@ -6698,11 +7103,7 @@ const luaL_Reg AC_Fence_meta[] = {
 };
 
 static int AC_Fence_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,AC_Fence_meta,ARRAY_SIZE(AC_Fence_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,AC_Fence_meta,ARRAY_SIZE(AC_Fence_meta));
 }
 #endif // AP_FENCE_ENABLED
 
@@ -6716,11 +7117,7 @@ const luaL_Reg mavlink_meta[] = {
 };
 
 static int mavlink_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,mavlink_meta,ARRAY_SIZE(mavlink_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,mavlink_meta,ARRAY_SIZE(mavlink_meta));
 }
 #endif // HAL_GCS_ENABLED
 
@@ -6729,11 +7126,7 @@ const luaL_Reg i2c_meta[] = {
 };
 
 static int i2c_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,i2c_meta,ARRAY_SIZE(i2c_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,i2c_meta,ARRAY_SIZE(i2c_meta));
 }
 
 #if HAL_LOGGING_ENABLED
@@ -6745,42 +7138,31 @@ const luaL_Reg AP_Logger_meta[] = {
 };
 
 static int AP_Logger_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,AP_Logger_meta,ARRAY_SIZE(AP_Logger_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,AP_Logger_meta,ARRAY_SIZE(AP_Logger_meta));
 }
 #endif // HAL_LOGGING_ENABLED
 
 #if (AP_EFI_SCRIPTING_ENABLED == 1)
 const luaL_Reg AP_EFI_meta[] = {
+    {"get_last_update_ms", AP_EFI_get_last_update_ms},
     {"get_state", AP_EFI_get_state},
     {"get_backend", AP_EFI_get_backend},
 };
 
 static int AP_EFI_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,AP_EFI_meta,ARRAY_SIZE(AP_EFI_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,AP_EFI_meta,ARRAY_SIZE(AP_EFI_meta));
 }
 #endif // (AP_EFI_SCRIPTING_ENABLED == 1)
 
-#if (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_MAG))
+#if AP_COMPASS_ENABLED
 const luaL_Reg Compass_meta[] = {
     {"healthy", Compass_healthy},
 };
 
 static int Compass_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,Compass_meta,ARRAY_SIZE(Compass_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,Compass_meta,ARRAY_SIZE(Compass_meta));
 }
-#endif // (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_MAG))
+#endif // AP_COMPASS_ENABLED
 
 #if HAL_WITH_IO_MCU
 const luaL_Reg AP_IOMCU_meta[] = {
@@ -6788,11 +7170,7 @@ const luaL_Reg AP_IOMCU_meta[] = {
 };
 
 static int AP_IOMCU_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,AP_IOMCU_meta,ARRAY_SIZE(AP_IOMCU_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,AP_IOMCU_meta,ARRAY_SIZE(AP_IOMCU_meta));
 }
 #endif // HAL_WITH_IO_MCU
 
@@ -6806,11 +7184,7 @@ const luaL_Reg AP_Winch_meta[] = {
 };
 
 static int AP_Winch_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,AP_Winch_meta,ARRAY_SIZE(AP_Winch_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,AP_Winch_meta,ARRAY_SIZE(AP_Winch_meta));
 }
 #endif // AP_WINCH_ENABLED && APM_BUILD_COPTER_OR_HELI
 
@@ -6823,11 +7197,7 @@ const luaL_Reg AP_Camera_meta[] = {
 };
 
 static int AP_Camera_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,AP_Camera_meta,ARRAY_SIZE(AP_Camera_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,AP_Camera_meta,ARRAY_SIZE(AP_Camera_meta));
 }
 #endif // AP_CAMERA_ENABLED && (AP_CAMERA_SCRIPTING_ENABLED == 1)
 
@@ -6846,11 +7216,7 @@ const luaL_Reg AP_Mount_meta[] = {
 };
 
 static int AP_Mount_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,AP_Mount_meta,ARRAY_SIZE(AP_Mount_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,AP_Mount_meta,ARRAY_SIZE(AP_Mount_meta));
 }
 #endif // HAL_MOUNT_ENABLED == 1
 
@@ -6860,11 +7226,7 @@ const luaL_Reg AR_PosControl_meta[] = {
 };
 
 static int AR_PosControl_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,AR_PosControl_meta,ARRAY_SIZE(AR_PosControl_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,AR_PosControl_meta,ARRAY_SIZE(AR_PosControl_meta));
 }
 #endif // APM_BUILD_TYPE(APM_BUILD_Rover)
 
@@ -6874,11 +7236,7 @@ const luaL_Reg AR_AttitudeControl_meta[] = {
 };
 
 static int AR_AttitudeControl_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,AR_AttitudeControl_meta,ARRAY_SIZE(AR_AttitudeControl_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,AR_AttitudeControl_meta,ARRAY_SIZE(AR_AttitudeControl_meta));
 }
 #endif // APM_BUILD_TYPE(APM_BUILD_Rover)
 
@@ -6888,13 +7246,23 @@ const luaL_Reg AC_AttitudeControl_meta[] = {
 };
 
 static int AC_AttitudeControl_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,AC_AttitudeControl_meta,ARRAY_SIZE(AC_AttitudeControl_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,AC_AttitudeControl_meta,ARRAY_SIZE(AC_AttitudeControl_meta));
 }
 #endif // APM_BUILD_TYPE(APM_BUILD_ArduPlane)||APM_BUILD_COPTER_OR_HELI
+
+#if AC_PRECLAND_ENABLED && (APM_BUILD_TYPE(APM_BUILD_ArduPlane)||APM_BUILD_COPTER_OR_HELI)
+const luaL_Reg AC_PrecLand_meta[] = {
+    {"get_target_location", AC_PrecLand_get_target_location},
+    {"get_target_velocity", AC_PrecLand_get_target_velocity},
+    {"get_last_valid_target_ms", AC_PrecLand_get_last_valid_target_ms},
+    {"target_acquired", AC_PrecLand_target_acquired},
+    {"healthy", AC_PrecLand_healthy},
+};
+
+static int AC_PrecLand_index(lua_State *L) {
+    return load_function(L,AC_PrecLand_meta,ARRAY_SIZE(AC_PrecLand_meta));
+}
+#endif // AC_PRECLAND_ENABLED && (APM_BUILD_TYPE(APM_BUILD_ArduPlane)||APM_BUILD_COPTER_OR_HELI)
 
 #if AP_FOLLOW_ENABLED && (APM_BUILD_TYPE(APM_BUILD_ArduPlane)||APM_BUILD_COPTER_OR_HELI)
 const luaL_Reg AP_Follow_meta[] = {
@@ -6906,11 +7274,7 @@ const luaL_Reg AP_Follow_meta[] = {
 };
 
 static int AP_Follow_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,AP_Follow_meta,ARRAY_SIZE(AP_Follow_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,AP_Follow_meta,ARRAY_SIZE(AP_Follow_meta));
 }
 #endif // AP_FOLLOW_ENABLED && (APM_BUILD_TYPE(APM_BUILD_ArduPlane)||APM_BUILD_COPTER_OR_HELI)
 
@@ -6924,11 +7288,7 @@ const luaL_Reg AP__fwversion___meta[] = {
 };
 
 static int AP__fwversion___index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,AP__fwversion___meta,ARRAY_SIZE(AP__fwversion___meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,AP__fwversion___meta,ARRAY_SIZE(AP__fwversion___meta));
 }
 
 #if APM_BUILD_TYPE(APM_BUILD_ArduPlane)||APM_BUILD_COPTER_OR_HELI
@@ -6950,11 +7310,7 @@ const luaL_Reg AP__motors___meta[] = {
 };
 
 static int AP__motors___index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,AP__motors___meta,ARRAY_SIZE(AP__motors___meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,AP__motors___meta,ARRAY_SIZE(AP__motors___meta));
 }
 #endif // APM_BUILD_TYPE(APM_BUILD_ArduPlane)||APM_BUILD_COPTER_OR_HELI
 
@@ -6967,11 +7323,7 @@ const luaL_Reg AP_Periph_FW_meta[] = {
 };
 
 static int AP_Periph_FW_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,AP_Periph_FW_meta,ARRAY_SIZE(AP_Periph_FW_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,AP_Periph_FW_meta,ARRAY_SIZE(AP_Periph_FW_meta));
 }
 #endif // defined(HAL_BUILD_AP_PERIPH)
 
@@ -6982,11 +7334,7 @@ const luaL_Reg CAN_meta[] = {
 };
 
 static int CAN_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,CAN_meta,ARRAY_SIZE(CAN_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,CAN_meta,ARRAY_SIZE(CAN_meta));
 }
 #endif // AP_SCRIPTING_CAN_SENSOR_ENABLED
 
@@ -7003,11 +7351,7 @@ const luaL_Reg AP_InertialSensor_meta[] = {
 };
 
 static int AP_InertialSensor_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,AP_InertialSensor_meta,ARRAY_SIZE(AP_InertialSensor_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,AP_InertialSensor_meta,ARRAY_SIZE(AP_InertialSensor_meta));
 }
 #endif // AP_INERTIALSENSOR_ENABLED
 
@@ -7019,25 +7363,20 @@ const luaL_Reg AP_MotorsMatrix_Scripting_Dynamic_meta[] = {
 };
 
 static int AP_MotorsMatrix_Scripting_Dynamic_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,AP_MotorsMatrix_Scripting_Dynamic_meta,ARRAY_SIZE(AP_MotorsMatrix_Scripting_Dynamic_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,AP_MotorsMatrix_Scripting_Dynamic_meta,ARRAY_SIZE(AP_MotorsMatrix_Scripting_Dynamic_meta));
 }
 #endif // APM_BUILD_TYPE(APM_BUILD_ArduPlane)||APM_BUILD_COPTER_OR_HELI
 
 #if !defined(HAL_DISABLE_ADC_DRIVER)
 const luaL_Reg hal_analogin_meta[] = {
+#if HAL_WITH_MCU_MONITORING
+    {"mcu_temperature", hal_analogin_mcu_temperature},
+#endif // HAL_WITH_MCU_MONITORING
     {"channel", hal_analogin_channel},
 };
 
 static int hal_analogin_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,hal_analogin_meta,ARRAY_SIZE(hal_analogin_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,hal_analogin_meta,ARRAY_SIZE(hal_analogin_meta));
 }
 #endif // !defined(HAL_DISABLE_ADC_DRIVER)
 
@@ -7049,11 +7388,7 @@ const luaL_Reg hal_gpio_meta[] = {
 };
 
 static int hal_gpio_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,hal_gpio_meta,ARRAY_SIZE(hal_gpio_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,hal_gpio_meta,ARRAY_SIZE(hal_gpio_meta));
 }
 
 #if APM_BUILD_TYPE(APM_BUILD_ArduCopter)
@@ -7063,11 +7398,7 @@ const luaL_Reg AP_MotorsMatrix_6DoF_Scripting_meta[] = {
 };
 
 static int AP_MotorsMatrix_6DoF_Scripting_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,AP_MotorsMatrix_6DoF_Scripting_meta,ARRAY_SIZE(AP_MotorsMatrix_6DoF_Scripting_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,AP_MotorsMatrix_6DoF_Scripting_meta,ARRAY_SIZE(AP_MotorsMatrix_6DoF_Scripting_meta));
 }
 #endif // APM_BUILD_TYPE(APM_BUILD_ArduCopter)
 
@@ -7079,11 +7410,7 @@ const luaL_Reg AC_AttitudeControl_Multi_6DoF_meta[] = {
 };
 
 static int AC_AttitudeControl_Multi_6DoF_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,AC_AttitudeControl_Multi_6DoF_meta,ARRAY_SIZE(AC_AttitudeControl_Multi_6DoF_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,AC_AttitudeControl_Multi_6DoF_meta,ARRAY_SIZE(AC_AttitudeControl_Multi_6DoF_meta));
 }
 #endif // APM_BUILD_TYPE(APM_BUILD_ArduCopter)
 
@@ -7094,11 +7421,7 @@ const luaL_Reg AP_Frsky_SPort_meta[] = {
 };
 
 static int AP_Frsky_SPort_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,AP_Frsky_SPort_meta,ARRAY_SIZE(AP_Frsky_SPort_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,AP_Frsky_SPort_meta,ARRAY_SIZE(AP_Frsky_SPort_meta));
 }
 #endif // AP_FRSKY_SPORT_TELEM_ENABLED
 
@@ -7112,29 +7435,27 @@ const luaL_Reg AP_MotorsMatrix_meta[] = {
 };
 
 static int AP_MotorsMatrix_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,AP_MotorsMatrix_meta,ARRAY_SIZE(AP_MotorsMatrix_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,AP_MotorsMatrix_meta,ARRAY_SIZE(AP_MotorsMatrix_meta));
 }
 #endif // APM_BUILD_TYPE(APM_BUILD_ArduPlane)||APM_BUILD_COPTER_OR_HELI
 
 #if APM_BUILD_TYPE(APM_BUILD_ArduSub)
 const luaL_Reg Sub_meta[] = {
+#if AP_RANGEFINDER_ENABLED
     {"set_rangefinder_target_cm", Sub_set_rangefinder_target_cm},
+#endif // AP_RANGEFINDER_ENABLED
+#if AP_RANGEFINDER_ENABLED
     {"get_rangefinder_target_cm", Sub_get_rangefinder_target_cm},
+#endif // AP_RANGEFINDER_ENABLED
+#if AP_RANGEFINDER_ENABLED
     {"rangefinder_alt_ok", Sub_rangefinder_alt_ok},
+#endif // AP_RANGEFINDER_ENABLED
     {"is_button_pressed", Sub_is_button_pressed},
     {"get_and_clear_button_count", Sub_get_and_clear_button_count},
 };
 
 static int Sub_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,Sub_meta,ARRAY_SIZE(Sub_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,Sub_meta,ARRAY_SIZE(Sub_meta));
 }
 #endif // APM_BUILD_TYPE(APM_BUILD_ArduSub)
 
@@ -7147,11 +7468,7 @@ const luaL_Reg QuadPlane_meta[] = {
 };
 
 static int QuadPlane_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,QuadPlane_meta,ARRAY_SIZE(QuadPlane_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,QuadPlane_meta,ARRAY_SIZE(QuadPlane_meta));
 }
 #endif // APM_BUILD_TYPE(APM_BUILD_ArduPlane) && HAL_QUADPLANE_ENABLED
 
@@ -7161,11 +7478,7 @@ const luaL_Reg ScriptingLED_meta[] = {
 };
 
 static int ScriptingLED_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,ScriptingLED_meta,ARRAY_SIZE(ScriptingLED_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,ScriptingLED_meta,ARRAY_SIZE(ScriptingLED_meta));
 }
 #endif // AP_NOTIFY_SCRIPTING_LED_ENABLED
 
@@ -7175,11 +7488,7 @@ const luaL_Reg AP_Button_meta[] = {
 };
 
 static int AP_Button_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,AP_Button_meta,ARRAY_SIZE(AP_Button_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,AP_Button_meta,ARRAY_SIZE(AP_Button_meta));
 }
 #endif // HAL_BUTTON_ENABLED == 1
 
@@ -7189,11 +7498,7 @@ const luaL_Reg AP_RPM_meta[] = {
 };
 
 static int AP_RPM_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,AP_RPM_meta,ARRAY_SIZE(AP_RPM_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,AP_RPM_meta,ARRAY_SIZE(AP_RPM_meta));
 }
 #endif // AP_RPM_ENABLED
 
@@ -7217,18 +7522,14 @@ const luaL_Reg AP_Mission_meta[] = {
     {"state", AP_Mission_state},
 };
 
-struct userdata_enum AP_Mission_enums[] = {
+const struct userdata_enum AP_Mission_enums[] = {
     {"MISSION_COMPLETE", AP_Mission::MISSION_COMPLETE},
     {"MISSION_RUNNING", AP_Mission::MISSION_RUNNING},
     {"MISSION_STOPPED", AP_Mission::MISSION_STOPPED},
 };
 
 static int AP_Mission_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,AP_Mission_meta,ARRAY_SIZE(AP_Mission_meta),name) || load_enum(L,AP_Mission_enums,ARRAY_SIZE(AP_Mission_enums),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,AP_Mission_meta,ARRAY_SIZE(AP_Mission_meta)) || load_enum(L,AP_Mission_enums,ARRAY_SIZE(AP_Mission_enums));
 }
 #endif // AP_MISSION_ENABLED
 
@@ -7237,11 +7538,7 @@ const luaL_Reg AP_Scripting_meta[] = {
 };
 
 static int AP_Scripting_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,AP_Scripting_meta,ARRAY_SIZE(AP_Scripting_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,AP_Scripting_meta,ARRAY_SIZE(AP_Scripting_meta));
 }
 
 const luaL_Reg AP_Param_meta[] = {
@@ -7258,15 +7555,12 @@ const luaL_Reg AP_Param_meta[] = {
 };
 
 static int AP_Param_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,AP_Param_meta,ARRAY_SIZE(AP_Param_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,AP_Param_meta,ARRAY_SIZE(AP_Param_meta));
 }
 
 #if HAL_WITH_ESC_TELEM == 1
 const luaL_Reg AP_ESC_Telem_meta[] = {
+    {"get_last_telem_data_ms", AP_ESC_Telem_get_last_telem_data_ms},
     {"set_rpm_scale", AP_ESC_Telem_set_rpm_scale},
     {"update_telem_data", AP_ESC_Telem_update_telem_data},
     {"update_rpm", AP_ESC_Telem_update_rpm},
@@ -7280,11 +7574,7 @@ const luaL_Reg AP_ESC_Telem_meta[] = {
 };
 
 static int AP_ESC_Telem_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,AP_ESC_Telem_meta,ARRAY_SIZE(AP_ESC_Telem_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,AP_ESC_Telem_meta,ARRAY_SIZE(AP_ESC_Telem_meta));
 }
 #endif // HAL_WITH_ESC_TELEM == 1
 
@@ -7296,16 +7586,13 @@ const luaL_Reg AP_OpticalFlow_meta[] = {
 };
 
 static int AP_OpticalFlow_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,AP_OpticalFlow_meta,ARRAY_SIZE(AP_OpticalFlow_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,AP_OpticalFlow_meta,ARRAY_SIZE(AP_OpticalFlow_meta));
 }
 #endif // AP_OPTICALFLOW_ENABLED
 
 #if (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_BARO))
 const luaL_Reg AP_Baro_meta[] = {
+    {"get_altitude_difference", AP_Baro_get_altitude_difference},
     {"healthy", AP_Baro_healthy},
     {"get_altitude", AP_Baro_get_altitude},
     {"get_external_temperature", AP_Baro_get_external_temperature},
@@ -7314,27 +7601,22 @@ const luaL_Reg AP_Baro_meta[] = {
 };
 
 static int AP_Baro_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,AP_Baro_meta,ARRAY_SIZE(AP_Baro_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,AP_Baro_meta,ARRAY_SIZE(AP_Baro_meta));
 }
 #endif // (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_BARO))
 
-#if HAL_GCS_ENABLED
-const luaL_Reg AP_SerialManager_meta[] = {
-    {"find_serial", AP_SerialManager_find_serial},
+#if AP_SERIALMANAGER_ENABLED
+const luaL_Reg serial_meta[] = {
+#if AP_SCRIPTING_SERIALDEVICE_ENABLED
+    {"find_simulated_device", lua_serial_find_simulated_device},
+#endif // AP_SCRIPTING_SERIALDEVICE_ENABLED
+    {"find_serial", lua_serial_find_serial},
 };
 
-static int AP_SerialManager_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,AP_SerialManager_meta,ARRAY_SIZE(AP_SerialManager_meta),name)) {
-        return 1;
-    }
-    return 0;
+static int serial_index(lua_State *L) {
+    return load_function(L,serial_meta,ARRAY_SIZE(serial_meta));
 }
-#endif // HAL_GCS_ENABLED
+#endif // AP_SERIALMANAGER_ENABLED
 
 #if AP_RC_CHANNEL_ENABLED
 const luaL_Reg RC_Channels_meta[] = {
@@ -7347,11 +7629,7 @@ const luaL_Reg RC_Channels_meta[] = {
 };
 
 static int RC_Channels_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,RC_Channels_meta,ARRAY_SIZE(RC_Channels_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,RC_Channels_meta,ARRAY_SIZE(RC_Channels_meta));
 }
 #endif // AP_RC_CHANNEL_ENABLED
 
@@ -7374,11 +7652,7 @@ const luaL_Reg SRV_Channels_meta[] = {
 };
 
 static int SRV_Channels_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,SRV_Channels_meta,ARRAY_SIZE(SRV_Channels_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,SRV_Channels_meta,ARRAY_SIZE(SRV_Channels_meta));
 }
 #endif // (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RC_OUT))
 
@@ -7392,16 +7666,13 @@ const luaL_Reg AP_SerialLED_meta[] = {
 };
 
 static int AP_SerialLED_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,AP_SerialLED_meta,ARRAY_SIZE(AP_SerialLED_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,AP_SerialLED_meta,ARRAY_SIZE(AP_SerialLED_meta));
 }
 #endif // AP_SERIALLED_ENABLED
 
 #if (!defined(HAL_BUILD_AP_PERIPH))
 const luaL_Reg AP_Vehicle_meta[] = {
+    {"set_crosstrack_start", AP_Vehicle_set_crosstrack_start},
     {"is_taking_off", AP_Vehicle_is_taking_off},
     {"is_landing", AP_Vehicle_is_landing},
     {"reboot", AP_Vehicle_reboot},
@@ -7442,11 +7713,7 @@ const luaL_Reg AP_Vehicle_meta[] = {
 };
 
 static int AP_Vehicle_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,AP_Vehicle_meta,ARRAY_SIZE(AP_Vehicle_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,AP_Vehicle_meta,ARRAY_SIZE(AP_Vehicle_meta));
 }
 #endif // (!defined(HAL_BUILD_AP_PERIPH))
 
@@ -7459,11 +7726,7 @@ const luaL_Reg AP_ONVIF_meta[] = {
 };
 
 static int AP_ONVIF_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,AP_ONVIF_meta,ARRAY_SIZE(AP_ONVIF_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,AP_ONVIF_meta,ARRAY_SIZE(AP_ONVIF_meta));
 }
 #endif // ENABLE_ONVIF == 1
 
@@ -7481,14 +7744,11 @@ const luaL_Reg GCS_meta[] = {
     {"send_named_float", GCS_send_named_float},
     {"set_message_interval", GCS_set_message_interval},
     {"send_text", GCS_send_text},
+    {"run_command_int", lua_GCS_command_int},
 };
 
 static int GCS_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,GCS_meta,ARRAY_SIZE(GCS_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,GCS_meta,ARRAY_SIZE(GCS_meta));
 }
 #endif // HAL_GCS_ENABLED
 
@@ -7502,11 +7762,7 @@ const luaL_Reg AP_Relay_meta[] = {
 };
 
 static int AP_Relay_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,AP_Relay_meta,ARRAY_SIZE(AP_Relay_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,AP_Relay_meta,ARRAY_SIZE(AP_Relay_meta));
 }
 #endif // AP_RELAY_ENABLED
 
@@ -7519,22 +7775,18 @@ const luaL_Reg AP_Terrain_meta[] = {
     {"enabled", AP_Terrain_enabled},
 };
 
-struct userdata_enum AP_Terrain_enums[] = {
+const struct userdata_enum AP_Terrain_enums[] = {
     {"TerrainStatusOK", AP_Terrain::TerrainStatusOK},
     {"TerrainStatusUnhealthy", AP_Terrain::TerrainStatusUnhealthy},
     {"TerrainStatusDisabled", AP_Terrain::TerrainStatusDisabled},
 };
 
 static int AP_Terrain_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,AP_Terrain_meta,ARRAY_SIZE(AP_Terrain_meta),name) || load_enum(L,AP_Terrain_enums,ARRAY_SIZE(AP_Terrain_enums),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,AP_Terrain_meta,ARRAY_SIZE(AP_Terrain_meta)) || load_enum(L,AP_Terrain_enums,ARRAY_SIZE(AP_Terrain_enums));
 }
 #endif // defined(AP_TERRAIN_AVAILABLE) && AP_TERRAIN_AVAILABLE == 1
 
-#if (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RANGEFINDER))
+#if AP_RANGEFINDER_ENABLED
 const luaL_Reg RangeFinder_meta[] = {
     {"get_backend", RangeFinder_get_backend},
     {"get_pos_offset_orient", RangeFinder_get_pos_offset_orient},
@@ -7550,13 +7802,9 @@ const luaL_Reg RangeFinder_meta[] = {
 };
 
 static int RangeFinder_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,RangeFinder_meta,ARRAY_SIZE(RangeFinder_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,RangeFinder_meta,ARRAY_SIZE(RangeFinder_meta));
 }
-#endif // (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RANGEFINDER))
+#endif // AP_RANGEFINDER_ENABLED
 
 #if HAL_PROXIMITY_ENABLED == 1
 const luaL_Reg AP_Proximity_meta[] = {
@@ -7569,11 +7817,7 @@ const luaL_Reg AP_Proximity_meta[] = {
 };
 
 static int AP_Proximity_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,AP_Proximity_meta,ARRAY_SIZE(AP_Proximity_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,AP_Proximity_meta,ARRAY_SIZE(AP_Proximity_meta));
 }
 #endif // HAL_PROXIMITY_ENABLED == 1
 
@@ -7587,16 +7831,14 @@ const luaL_Reg AP_Notify_meta[] = {
 };
 
 static int AP_Notify_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,AP_Notify_meta,ARRAY_SIZE(AP_Notify_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,AP_Notify_meta,ARRAY_SIZE(AP_Notify_meta));
 }
 #endif // (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_NOTIFY))
 
 #if (AP_GPS_ENABLED && (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_GPS)))
 const luaL_Reg AP_GPS_meta[] = {
+    {"time_epoch_usec", AP_GPS_time_epoch_usec},
+    {"gps_yaw_deg", AP_GPS_gps_yaw_deg},
     {"first_unconfigured_gps", AP_GPS_first_unconfigured_gps},
     {"get_antenna_offset", AP_GPS_get_antenna_offset},
     {"have_vertical_velocity", AP_GPS_have_vertical_velocity},
@@ -7619,7 +7861,7 @@ const luaL_Reg AP_GPS_meta[] = {
     {"num_sensors", AP_GPS_num_sensors},
 };
 
-struct userdata_enum AP_GPS_enums[] = {
+const struct userdata_enum AP_GPS_enums[] = {
     {"GPS_OK_FIX_3D_RTK_FIXED", AP_GPS::GPS_OK_FIX_3D_RTK_FIXED},
     {"GPS_OK_FIX_3D_RTK_FLOAT", AP_GPS::GPS_OK_FIX_3D_RTK_FLOAT},
     {"GPS_OK_FIX_3D_DGPS", AP_GPS::GPS_OK_FIX_3D_DGPS},
@@ -7630,11 +7872,7 @@ struct userdata_enum AP_GPS_enums[] = {
 };
 
 static int AP_GPS_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,AP_GPS_meta,ARRAY_SIZE(AP_GPS_meta),name) || load_enum(L,AP_GPS_enums,ARRAY_SIZE(AP_GPS_enums),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,AP_GPS_meta,ARRAY_SIZE(AP_GPS_meta)) || load_enum(L,AP_GPS_enums,ARRAY_SIZE(AP_GPS_enums));
 }
 #endif // (AP_GPS_ENABLED && (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_GPS)))
 
@@ -7655,25 +7893,23 @@ const luaL_Reg AP_BattMonitor_meta[] = {
     {"consumed_mah", AP_BattMonitor_consumed_mah},
     {"current_amps", AP_BattMonitor_current_amps},
     {"voltage_resting_estimate", AP_BattMonitor_voltage_resting_estimate},
+    {"get_resistance", AP_BattMonitor_get_resistance},
     {"voltage", AP_BattMonitor_voltage},
     {"healthy", AP_BattMonitor_healthy},
     {"num_instances", AP_BattMonitor_num_instances},
 };
 
 static int AP_BattMonitor_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,AP_BattMonitor_meta,ARRAY_SIZE(AP_BattMonitor_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,AP_BattMonitor_meta,ARRAY_SIZE(AP_BattMonitor_meta));
 }
 #endif // AP_BATTERY_ENABLED
 
-#if (!defined(HAL_BUILD_AP_PERIPH))
+#if AP_ARMING_ENABLED
 const luaL_Reg AP_Arming_meta[] = {
     {"set_aux_auth_failed", AP_Arming_set_aux_auth_failed},
     {"set_aux_auth_passed", AP_Arming_set_aux_auth_passed},
     {"get_aux_auth_id", AP_Arming_get_aux_auth_id},
+    {"arm_force", AP_Arming_arm_force},
     {"arm", AP_Arming_arm},
     {"pre_arm_checks", AP_Arming_pre_arm_checks},
     {"is_armed", AP_Arming_is_armed},
@@ -7681,13 +7917,9 @@ const luaL_Reg AP_Arming_meta[] = {
 };
 
 static int AP_Arming_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,AP_Arming_meta,ARRAY_SIZE(AP_Arming_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,AP_Arming_meta,ARRAY_SIZE(AP_Arming_meta));
 }
-#endif // (!defined(HAL_BUILD_AP_PERIPH))
+#endif // AP_ARMING_ENABLED
 
 #if AP_AHRS_ENABLED
 const luaL_Reg AP_AHRS_meta[] = {
@@ -7727,11 +7959,7 @@ const luaL_Reg AP_AHRS_meta[] = {
 };
 
 static int AP_AHRS_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,AP_AHRS_meta,ARRAY_SIZE(AP_AHRS_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,AP_AHRS_meta,ARRAY_SIZE(AP_AHRS_meta));
 }
 #endif // AP_AHRS_ENABLED
 
@@ -7739,24 +7967,21 @@ static int AP_AHRS_index(lua_State *L) {
 static int AP_Filesystem__stat_t_ctime(lua_State *L) {
     AP_Filesystem::stat_t *ud = check_AP_Filesystem__stat_t(L, 1);
     binding_argcheck(L, 1);
-    new_uint32_t(L);
-    *static_cast<uint32_t *>(luaL_checkudata(L, -1, "uint32_t")) = ud->ctime;
+    *new_uint32_t(L) = ud->ctime;
     return 1;
 }
 
 static int AP_Filesystem__stat_t_atime(lua_State *L) {
     AP_Filesystem::stat_t *ud = check_AP_Filesystem__stat_t(L, 1);
     binding_argcheck(L, 1);
-    new_uint32_t(L);
-    *static_cast<uint32_t *>(luaL_checkudata(L, -1, "uint32_t")) = ud->atime;
+    *new_uint32_t(L) = ud->atime;
     return 1;
 }
 
 static int AP_Filesystem__stat_t_mtime(lua_State *L) {
     AP_Filesystem::stat_t *ud = check_AP_Filesystem__stat_t(L, 1);
     binding_argcheck(L, 1);
-    new_uint32_t(L);
-    *static_cast<uint32_t *>(luaL_checkudata(L, -1, "uint32_t")) = ud->mtime;
+    *new_uint32_t(L) = ud->mtime;
     return 1;
 }
 
@@ -7770,8 +7995,7 @@ static int AP_Filesystem__stat_t_mode(lua_State *L) {
 static int AP_Filesystem__stat_t_size(lua_State *L) {
     AP_Filesystem::stat_t *ud = check_AP_Filesystem__stat_t(L, 1);
     binding_argcheck(L, 1);
-    new_uint32_t(L);
-    *static_cast<uint32_t *>(luaL_checkudata(L, -1, "uint32_t")) = ud->size;
+    *new_uint32_t(L) = ud->size;
     return 1;
 }
 
@@ -7790,7 +8014,7 @@ static int EFI_State_pt_compensation(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -7807,7 +8031,7 @@ static int EFI_State_throttle_out(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -7824,7 +8048,7 @@ static int EFI_State_ignition_voltage(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -7832,8 +8056,7 @@ static int EFI_State_cylinder_status(lua_State *L) {
     EFI_State *ud = check_EFI_State(L, 1);
     switch(lua_gettop(L)) {
         case 1:
-            new_Cylinder_Status(L);
-            *check_Cylinder_Status(L, -1) = ud->cylinder_status;
+            *new_Cylinder_Status(L) = ud->cylinder_status;
             return 1;
         case 2: {
             Cylinder_Status & data_2 = *check_Cylinder_Status(L, 2);
@@ -7841,7 +8064,7 @@ static int EFI_State_cylinder_status(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -7858,7 +8081,7 @@ static int EFI_State_ecu_index(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -7875,7 +8098,7 @@ static int EFI_State_throttle_position_percent(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -7892,7 +8115,7 @@ static int EFI_State_estimated_consumed_fuel_volume_cm3(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -7909,7 +8132,7 @@ static int EFI_State_fuel_consumption_rate_cm3pm(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -7926,7 +8149,7 @@ static int EFI_State_fuel_pressure_status(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -7943,7 +8166,7 @@ static int EFI_State_fuel_pressure(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -7960,7 +8183,7 @@ static int EFI_State_oil_temperature(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -7977,7 +8200,7 @@ static int EFI_State_oil_pressure(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -7994,7 +8217,7 @@ static int EFI_State_coolant_temperature(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -8011,7 +8234,7 @@ static int EFI_State_intake_manifold_temperature(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -8028,7 +8251,7 @@ static int EFI_State_intake_manifold_pressure_kpa(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -8045,7 +8268,7 @@ static int EFI_State_atmospheric_pressure_kpa(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -8062,7 +8285,7 @@ static int EFI_State_spark_dwell_time_ms(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -8070,8 +8293,7 @@ static int EFI_State_engine_speed_rpm(lua_State *L) {
     EFI_State *ud = check_EFI_State(L, 1);
     switch(lua_gettop(L)) {
         case 1:
-            new_uint32_t(L);
-            *static_cast<uint32_t *>(luaL_checkudata(L, -1, "uint32_t")) = ud->engine_speed_rpm;
+            *new_uint32_t(L) = ud->engine_speed_rpm;
             return 1;
         case 2: {
             const uint32_t raw_data_2 = coerce_to_uint32_t(L, 2);
@@ -8080,7 +8302,7 @@ static int EFI_State_engine_speed_rpm(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -8097,7 +8319,7 @@ static int EFI_State_engine_load_percent(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -8113,7 +8335,7 @@ static int EFI_State_general_error(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -8121,8 +8343,7 @@ static int EFI_State_last_updated_ms(lua_State *L) {
     EFI_State *ud = check_EFI_State(L, 1);
     switch(lua_gettop(L)) {
         case 1:
-            new_uint32_t(L);
-            *static_cast<uint32_t *>(luaL_checkudata(L, -1, "uint32_t")) = ud->last_updated_ms;
+            *new_uint32_t(L) = ud->last_updated_ms;
             return 1;
         case 2: {
             const uint32_t raw_data_2 = coerce_to_uint32_t(L, 2);
@@ -8131,7 +8352,7 @@ static int EFI_State_last_updated_ms(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -8150,7 +8371,7 @@ static int Cylinder_Status_lambda_coefficient(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -8167,7 +8388,7 @@ static int Cylinder_Status_exhaust_gas_temperature2(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -8184,7 +8405,7 @@ static int Cylinder_Status_exhaust_gas_temperature(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -8201,7 +8422,7 @@ static int Cylinder_Status_cylinder_head_temperature2(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -8218,7 +8439,7 @@ static int Cylinder_Status_cylinder_head_temperature(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -8235,7 +8456,7 @@ static int Cylinder_Status_injection_time_ms(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -8252,7 +8473,7 @@ static int Cylinder_Status_ignition_timing_deg(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -8261,16 +8482,14 @@ static int Cylinder_Status_ignition_timing_deg(lua_State *L) {
 static int AP_Camera__camera_state_t_tracking_p2(lua_State *L) {
     AP_Camera::camera_state_t *ud = check_AP_Camera__camera_state_t(L, 1);
     binding_argcheck(L, 1);
-    new_Vector2f(L);
-    *check_Vector2f(L, -1) = ud->tracking_p2;
+    *new_Vector2f(L) = ud->tracking_p2;
     return 1;
 }
 
 static int AP_Camera__camera_state_t_tracking_p1(lua_State *L) {
     AP_Camera::camera_state_t *ud = check_AP_Camera__camera_state_t(L, 1);
     binding_argcheck(L, 1);
-    new_Vector2f(L);
-    *check_Vector2f(L, -1) = ud->tracking_p1;
+    *new_Vector2f(L) = ud->tracking_p1;
     return 1;
 }
 
@@ -8338,7 +8557,7 @@ static int AP_HAL__CANFrame_dlc(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -8359,7 +8578,7 @@ static int AP_HAL__CANFrame_data(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -8367,8 +8586,7 @@ static int AP_HAL__CANFrame_id(lua_State *L) {
     AP_HAL::CANFrame *ud = check_AP_HAL__CANFrame(L, 1);
     switch(lua_gettop(L)) {
         case 1:
-            new_uint32_t(L);
-            *static_cast<uint32_t *>(luaL_checkudata(L, -1, "uint32_t")) = ud->id;
+            *new_uint32_t(L) = ud->id;
             return 1;
         case 2: {
             const uint32_t raw_data_2 = coerce_to_uint32_t(L, 2);
@@ -8377,7 +8595,7 @@ static int AP_HAL__CANFrame_id(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -8400,7 +8618,7 @@ static int AP_MotorsMatrix_Scripting_Dynamic__factor_table_throttle(lua_State *L
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -8421,7 +8639,7 @@ static int AP_MotorsMatrix_Scripting_Dynamic__factor_table_yaw(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -8442,7 +8660,7 @@ static int AP_MotorsMatrix_Scripting_Dynamic__factor_table_pitch(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -8463,7 +8681,7 @@ static int AP_MotorsMatrix_Scripting_Dynamic__factor_table_roll(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -8482,7 +8700,7 @@ static int mavlink_mission_item_int_t_current(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -8499,7 +8717,7 @@ static int mavlink_mission_item_int_t_frame(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -8516,7 +8734,7 @@ static int mavlink_mission_item_int_t_command(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -8533,7 +8751,7 @@ static int mavlink_mission_item_int_t_seq(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -8550,7 +8768,7 @@ static int mavlink_mission_item_int_t_z(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -8567,7 +8785,7 @@ static int mavlink_mission_item_int_t_y(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -8584,7 +8802,7 @@ static int mavlink_mission_item_int_t_x(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -8601,7 +8819,7 @@ static int mavlink_mission_item_int_t_param4(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -8618,7 +8836,7 @@ static int mavlink_mission_item_int_t_param3(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -8635,7 +8853,7 @@ static int mavlink_mission_item_int_t_param2(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -8652,7 +8870,7 @@ static int mavlink_mission_item_int_t_param1(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -8704,7 +8922,7 @@ static int AP_ESC_Telem_Backend__TelemetryData_temperature_cdeg(lua_State *L) {
 }
 
 #endif // (HAL_WITH_ESC_TELEM == 1)
-#if (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RANGEFINDER))
+#if AP_RANGEFINDER_ENABLED
 static int RangeFinder__RangeFinder_State_voltage_mv(lua_State *L) {
     RangeFinder::RangeFinder_State *ud = check_RangeFinder__RangeFinder_State(L, 1);
     switch(lua_gettop(L)) {
@@ -8718,7 +8936,7 @@ static int RangeFinder__RangeFinder_State_voltage_mv(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -8735,7 +8953,7 @@ static int RangeFinder__RangeFinder_State_signal_quality_pct(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -8752,7 +8970,7 @@ static int RangeFinder__RangeFinder_State_distance_m(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -8769,7 +8987,7 @@ static int RangeFinder__RangeFinder_State_range_valid_count(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -8786,7 +9004,7 @@ static int RangeFinder__RangeFinder_State_status(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -8794,8 +9012,7 @@ static int RangeFinder__RangeFinder_State_last_reading_ms(lua_State *L) {
     RangeFinder::RangeFinder_State *ud = check_RangeFinder__RangeFinder_State(L, 1);
     switch(lua_gettop(L)) {
         case 1:
-            new_uint32_t(L);
-            *static_cast<uint32_t *>(luaL_checkudata(L, -1, "uint32_t")) = ud->last_reading_ms;
+            *new_uint32_t(L) = ud->last_reading_ms;
             return 1;
         case 2: {
             const uint32_t raw_data_2 = coerce_to_uint32_t(L, 2);
@@ -8804,11 +9021,11 @@ static int RangeFinder__RangeFinder_State_last_reading_ms(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
-#endif // (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RANGEFINDER))
+#endif // AP_RANGEFINDER_ENABLED
 #if AP_AHRS_ENABLED
 static int Quaternion_q4(lua_State *L) {
     Quaternion *ud = check_Quaternion(L, 1);
@@ -8823,7 +9040,7 @@ static int Quaternion_q4(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -8840,7 +9057,7 @@ static int Quaternion_q3(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -8857,7 +9074,7 @@ static int Quaternion_q2(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -8874,7 +9091,7 @@ static int Quaternion_q1(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -8892,7 +9109,7 @@ static int Vector2f_y(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -8909,7 +9126,7 @@ static int Vector2f_x(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -8926,7 +9143,7 @@ static int Vector3f_z(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -8943,7 +9160,7 @@ static int Vector3f_y(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -8960,7 +9177,7 @@ static int Vector3f_x(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -9071,7 +9288,7 @@ static int Location_loiter_xtrack(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -9087,7 +9304,7 @@ static int Location_origin_alt(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -9103,7 +9320,7 @@ static int Location_terrain_alt(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -9119,7 +9336,7 @@ static int Location_relative_alt(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -9136,7 +9353,7 @@ static int Location_alt(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -9153,7 +9370,7 @@ static int Location_lng(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -9170,7 +9387,7 @@ static int Location_lat(lua_State *L) {
             return 0;
          }
         default:
-            return luaL_argerror(L, lua_gettop(L), "too many arguments");
+            return field_argerror(L); // too many arguments
     }
 }
 
@@ -9184,6 +9401,228 @@ static int AP_Filesystem__stat_t_is_directory(lua_State *L) {
     return 1;
 }
 #endif // AP_FILESYSTEM_FILE_READING_ENABLED
+
+static int uint64_t___add(lua_State *L) {
+    binding_argcheck(L, 2);
+    uint64_t ud = coerce_to_uint64_t(L, 1);
+    uint64_t ud2 = coerce_to_uint64_t(L, 2);
+    *new_uint64_t(L) = (ud) + (ud2);
+    return 1;
+}
+
+static int uint64_t___sub(lua_State *L) {
+    binding_argcheck(L, 2);
+    uint64_t ud = coerce_to_uint64_t(L, 1);
+    uint64_t ud2 = coerce_to_uint64_t(L, 2);
+    *new_uint64_t(L) = (ud) - (ud2);
+    return 1;
+}
+
+static int uint64_t___mul(lua_State *L) {
+    binding_argcheck(L, 2);
+    uint64_t ud = coerce_to_uint64_t(L, 1);
+    uint64_t ud2 = coerce_to_uint64_t(L, 2);
+    *new_uint64_t(L) = (ud) * (ud2);
+    return 1;
+}
+
+static int uint64_t___div(lua_State *L) {
+    binding_argcheck(L, 2);
+    uint64_t ud = coerce_to_uint64_t(L, 1);
+    uint64_t ud2 = coerce_to_uint64_t(L, 2);
+    *new_uint64_t(L) = (ud) / (ud2);
+    return 1;
+}
+
+static int uint64_t___mod(lua_State *L) {
+    binding_argcheck(L, 2);
+    uint64_t ud = coerce_to_uint64_t(L, 1);
+    uint64_t ud2 = coerce_to_uint64_t(L, 2);
+    *new_uint64_t(L) = (ud) % (ud2);
+    return 1;
+}
+
+static int uint64_t___band(lua_State *L) {
+    binding_argcheck(L, 2);
+    uint64_t ud = coerce_to_uint64_t(L, 1);
+    uint64_t ud2 = coerce_to_uint64_t(L, 2);
+    *new_uint64_t(L) = (ud) & (ud2);
+    return 1;
+}
+
+static int uint64_t___bor(lua_State *L) {
+    binding_argcheck(L, 2);
+    uint64_t ud = coerce_to_uint64_t(L, 1);
+    uint64_t ud2 = coerce_to_uint64_t(L, 2);
+    *new_uint64_t(L) = (ud) | (ud2);
+    return 1;
+}
+
+static int uint64_t___bxor(lua_State *L) {
+    binding_argcheck(L, 2);
+    uint64_t ud = coerce_to_uint64_t(L, 1);
+    uint64_t ud2 = coerce_to_uint64_t(L, 2);
+    *new_uint64_t(L) = (ud) ^ (ud2);
+    return 1;
+}
+
+static int uint64_t___shl(lua_State *L) {
+    binding_argcheck(L, 2);
+    uint64_t ud = coerce_to_uint64_t(L, 1);
+    uint64_t ud2 = coerce_to_uint64_t(L, 2);
+    *new_uint64_t(L) = (ud) << (ud2);
+    return 1;
+}
+
+static int uint64_t___shr(lua_State *L) {
+    binding_argcheck(L, 2);
+    uint64_t ud = coerce_to_uint64_t(L, 1);
+    uint64_t ud2 = coerce_to_uint64_t(L, 2);
+    *new_uint64_t(L) = (ud) >> (ud2);
+    return 1;
+}
+
+static int uint64_t___eq(lua_State *L) {
+    binding_argcheck(L, 2);
+    uint64_t ud = coerce_to_uint64_t(L, 1);
+    uint64_t ud2 = coerce_to_uint64_t(L, 2);
+    lua_pushboolean(L, (ud) == (ud2));
+    return 1;
+}
+
+static int uint64_t___lt(lua_State *L) {
+    binding_argcheck(L, 2);
+    uint64_t ud = coerce_to_uint64_t(L, 1);
+    uint64_t ud2 = coerce_to_uint64_t(L, 2);
+    lua_pushboolean(L, (ud) < (ud2));
+    return 1;
+}
+
+static int uint64_t___le(lua_State *L) {
+    binding_argcheck(L, 2);
+    uint64_t ud = coerce_to_uint64_t(L, 1);
+    uint64_t ud2 = coerce_to_uint64_t(L, 2);
+    lua_pushboolean(L, (ud) <= (ud2));
+    return 1;
+}
+
+static int uint64_t___bnot(lua_State *L) {
+    binding_argcheck(L, 2);
+    uint64_t ud = coerce_to_uint64_t(L, 1);
+    *new_uint64_t(L) = ~ (ud);
+    return 1;
+}
+
+static int uint32_t___add(lua_State *L) {
+    binding_argcheck(L, 2);
+    uint32_t ud = coerce_to_uint32_t(L, 1);
+    uint32_t ud2 = coerce_to_uint32_t(L, 2);
+    *new_uint32_t(L) = (ud) + (ud2);
+    return 1;
+}
+
+static int uint32_t___sub(lua_State *L) {
+    binding_argcheck(L, 2);
+    uint32_t ud = coerce_to_uint32_t(L, 1);
+    uint32_t ud2 = coerce_to_uint32_t(L, 2);
+    *new_uint32_t(L) = (ud) - (ud2);
+    return 1;
+}
+
+static int uint32_t___mul(lua_State *L) {
+    binding_argcheck(L, 2);
+    uint32_t ud = coerce_to_uint32_t(L, 1);
+    uint32_t ud2 = coerce_to_uint32_t(L, 2);
+    *new_uint32_t(L) = (ud) * (ud2);
+    return 1;
+}
+
+static int uint32_t___div(lua_State *L) {
+    binding_argcheck(L, 2);
+    uint32_t ud = coerce_to_uint32_t(L, 1);
+    uint32_t ud2 = coerce_to_uint32_t(L, 2);
+    *new_uint32_t(L) = (ud) / (ud2);
+    return 1;
+}
+
+static int uint32_t___mod(lua_State *L) {
+    binding_argcheck(L, 2);
+    uint32_t ud = coerce_to_uint32_t(L, 1);
+    uint32_t ud2 = coerce_to_uint32_t(L, 2);
+    *new_uint32_t(L) = (ud) % (ud2);
+    return 1;
+}
+
+static int uint32_t___band(lua_State *L) {
+    binding_argcheck(L, 2);
+    uint32_t ud = coerce_to_uint32_t(L, 1);
+    uint32_t ud2 = coerce_to_uint32_t(L, 2);
+    *new_uint32_t(L) = (ud) & (ud2);
+    return 1;
+}
+
+static int uint32_t___bor(lua_State *L) {
+    binding_argcheck(L, 2);
+    uint32_t ud = coerce_to_uint32_t(L, 1);
+    uint32_t ud2 = coerce_to_uint32_t(L, 2);
+    *new_uint32_t(L) = (ud) | (ud2);
+    return 1;
+}
+
+static int uint32_t___bxor(lua_State *L) {
+    binding_argcheck(L, 2);
+    uint32_t ud = coerce_to_uint32_t(L, 1);
+    uint32_t ud2 = coerce_to_uint32_t(L, 2);
+    *new_uint32_t(L) = (ud) ^ (ud2);
+    return 1;
+}
+
+static int uint32_t___shl(lua_State *L) {
+    binding_argcheck(L, 2);
+    uint32_t ud = coerce_to_uint32_t(L, 1);
+    uint32_t ud2 = coerce_to_uint32_t(L, 2);
+    *new_uint32_t(L) = (ud) << (ud2);
+    return 1;
+}
+
+static int uint32_t___shr(lua_State *L) {
+    binding_argcheck(L, 2);
+    uint32_t ud = coerce_to_uint32_t(L, 1);
+    uint32_t ud2 = coerce_to_uint32_t(L, 2);
+    *new_uint32_t(L) = (ud) >> (ud2);
+    return 1;
+}
+
+static int uint32_t___eq(lua_State *L) {
+    binding_argcheck(L, 2);
+    uint32_t ud = coerce_to_uint32_t(L, 1);
+    uint32_t ud2 = coerce_to_uint32_t(L, 2);
+    lua_pushboolean(L, (ud) == (ud2));
+    return 1;
+}
+
+static int uint32_t___lt(lua_State *L) {
+    binding_argcheck(L, 2);
+    uint32_t ud = coerce_to_uint32_t(L, 1);
+    uint32_t ud2 = coerce_to_uint32_t(L, 2);
+    lua_pushboolean(L, (ud) < (ud2));
+    return 1;
+}
+
+static int uint32_t___le(lua_State *L) {
+    binding_argcheck(L, 2);
+    uint32_t ud = coerce_to_uint32_t(L, 1);
+    uint32_t ud2 = coerce_to_uint32_t(L, 2);
+    lua_pushboolean(L, (ud) <= (ud2));
+    return 1;
+}
+
+static int uint32_t___bnot(lua_State *L) {
+    binding_argcheck(L, 2);
+    uint32_t ud = coerce_to_uint32_t(L, 1);
+    *new_uint32_t(L) = ~ (ud);
+    return 1;
+}
 
 #if AP_SCRIPTING_CAN_SENSOR_ENABLED
 static int AP_HAL__CANFrame_isErrorFrame(lua_State *L) {
@@ -9282,6 +9721,10 @@ static int Parameter_get(lua_State *L) {
             data_5002));
 
     if (data) {
+#if 2 > LUA_MINSTACK
+        luaL_checkstack(L, 2, nullptr);
+#endif
+
         lua_pushnumber(L, data_5002);
         return 1;
     }
@@ -9315,6 +9758,58 @@ static int Parameter_init(lua_State *L) {
 
     lua_pushboolean(L, data);
     return 1;
+}
+
+static int AP_Scripting_SerialAccess_set_flow_control(lua_State *L) {
+    binding_argcheck(L, 2);
+    AP_Scripting_SerialAccess * ud = check_AP_Scripting_SerialAccess(L, 1);
+    const lua_Integer raw_data_2 = get_integer(L, 2, static_cast<int32_t>(AP_HAL::UARTDriver::FLOW_CONTROL_DISABLE), static_cast<int32_t>(AP_HAL::UARTDriver::FLOW_CONTROL_RTS_DE));
+    const AP_HAL::UARTDriver::flow_control data_2 = static_cast<AP_HAL::UARTDriver::flow_control>(raw_data_2);
+    ud->set_flow_control(
+            data_2);
+
+    return 0;
+}
+
+static int AP_Scripting_SerialAccess_available(lua_State *L) {
+    binding_argcheck(L, 1);
+    AP_Scripting_SerialAccess * ud = check_AP_Scripting_SerialAccess(L, 1);
+    const uint32_t data = static_cast<uint32_t>(ud->available());
+
+        *new_uint32_t(L) = data;
+    return 1;
+}
+
+static int AP_Scripting_SerialAccess_read(lua_State *L) {
+    binding_argcheck(L, 1);
+    AP_Scripting_SerialAccess * ud = check_AP_Scripting_SerialAccess(L, 1);
+    const int16_t data = static_cast<int16_t>(ud->read());
+
+    lua_pushinteger(L, data);
+    return 1;
+}
+
+static int AP_Scripting_SerialAccess_write(lua_State *L) {
+    binding_argcheck(L, 2);
+    AP_Scripting_SerialAccess * ud = check_AP_Scripting_SerialAccess(L, 1);
+    const uint8_t raw_data_2 = get_uint8_t(L, 2);
+    const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
+    const uint32_t data = static_cast<uint32_t>(ud->write(
+            data_2));
+
+        *new_uint32_t(L) = data;
+    return 1;
+}
+
+static int AP_Scripting_SerialAccess_begin(lua_State *L) {
+    binding_argcheck(L, 2);
+    AP_Scripting_SerialAccess * ud = check_AP_Scripting_SerialAccess(L, 1);
+    const uint32_t raw_data_2 = get_uint32(L, 2, MAX(1U, 0U), MIN(UINT32_MAX, UINT32_MAX));
+    const uint32_t data_2 = static_cast<uint32_t>(raw_data_2);
+    ud->begin(
+            data_2);
+
+    return 0;
 }
 
 #if AP_AHRS_ENABLED
@@ -9377,8 +9872,7 @@ static int Quaternion_inverse(lua_State *L) {
     Quaternion * ud = check_Quaternion(L, 1);
     const Quaternion &data = ud->inverse();
 
-    new_Quaternion(L);
-    *check_Quaternion(L, -1) = data;
+    *new_Quaternion(L) = data;
     return 1;
 }
 #endif // AP_AHRS_ENABLED
@@ -9461,8 +9955,7 @@ static int Quaternion___mul(lua_State *L) {
     binding_argcheck(L, 2);
     Quaternion *ud = check_Quaternion(L, 1);
     Quaternion *ud2 = check_Quaternion(L, 2);
-    new_Quaternion(L);
-    *check_Quaternion(L, -1) = *ud * *ud2;
+    *new_Quaternion(L) = (*ud) * (*ud2);
     return 1;
 }
 
@@ -9472,8 +9965,7 @@ static int Vector2f_copy(lua_State *L) {
     Vector2f * ud = check_Vector2f(L, 1);
     const Vector2f data = (*ud);
 
-    new_Vector2f(L);
-    *check_Vector2f(L, -1) = data;
+    *new_Vector2f(L) = data;
     return 1;
 }
 
@@ -9545,8 +10037,7 @@ static int Vector2f___add(lua_State *L) {
     binding_argcheck(L, 2);
     Vector2f *ud = check_Vector2f(L, 1);
     Vector2f *ud2 = check_Vector2f(L, 2);
-    new_Vector2f(L);
-    *check_Vector2f(L, -1) = *ud + *ud2;
+    *new_Vector2f(L) = (*ud) + (*ud2);
     return 1;
 }
 
@@ -9554,8 +10045,7 @@ static int Vector2f___sub(lua_State *L) {
     binding_argcheck(L, 2);
     Vector2f *ud = check_Vector2f(L, 1);
     Vector2f *ud2 = check_Vector2f(L, 2);
-    new_Vector2f(L);
-    *check_Vector2f(L, -1) = *ud - *ud2;
+    *new_Vector2f(L) = (*ud) - (*ud2);
     return 1;
 }
 
@@ -9586,8 +10076,7 @@ static int Vector3f_xy(lua_State *L) {
     Vector3f * ud = check_Vector3f(L, 1);
     const Vector2f &data = ud->xy();
 
-    new_Vector2f(L);
-    *check_Vector2f(L, -1) = data;
+    *new_Vector2f(L) = data;
     return 1;
 }
 
@@ -9596,8 +10085,7 @@ static int Vector3f_copy(lua_State *L) {
     Vector3f * ud = check_Vector3f(L, 1);
     const Vector3f data = (*ud);
 
-    new_Vector3f(L);
-    *check_Vector3f(L, -1) = data;
+    *new_Vector3f(L) = data;
     return 1;
 }
 
@@ -9609,8 +10097,7 @@ static int Vector3f_scale(lua_State *L) {
     const Vector3f &data = ud->scale(
             data_2);
 
-    new_Vector3f(L);
-    *check_Vector3f(L, -1) = data;
+    *new_Vector3f(L) = data;
     return 1;
 }
 
@@ -9621,8 +10108,7 @@ static int Vector3f_cross(lua_State *L) {
     const Vector3f &data = ud->cross(
             data_2);
 
-    new_Vector3f(L);
-    *check_Vector3f(L, -1) = data;
+    *new_Vector3f(L) = data;
     return 1;
 }
 
@@ -9685,8 +10171,7 @@ static int Vector3f___add(lua_State *L) {
     binding_argcheck(L, 2);
     Vector3f *ud = check_Vector3f(L, 1);
     Vector3f *ud2 = check_Vector3f(L, 2);
-    new_Vector3f(L);
-    *check_Vector3f(L, -1) = *ud + *ud2;
+    *new_Vector3f(L) = (*ud) + (*ud2);
     return 1;
 }
 
@@ -9694,8 +10179,7 @@ static int Vector3f___sub(lua_State *L) {
     binding_argcheck(L, 2);
     Vector3f *ud = check_Vector3f(L, 1);
     Vector3f *ud2 = check_Vector3f(L, 2);
-    new_Vector3f(L);
-    *check_Vector3f(L, -1) = *ud - *ud2;
+    *new_Vector3f(L) = (*ud) - (*ud2);
     return 1;
 }
 
@@ -9704,8 +10188,7 @@ static int Location_copy(lua_State *L) {
     Location * ud = check_Location(L, 1);
     const Location data = (*ud);
 
-    new_Location(L);
-    *check_Location(L, -1) = data;
+    *new_Location(L) = data;
     return 1;
 }
 
@@ -9737,8 +10220,7 @@ static int Location_get_distance_NE(lua_State *L) {
     const Vector2f &data = ud->get_distance_NE(
             data_2);
 
-    new_Vector2f(L);
-    *check_Vector2f(L, -1) = data;
+    *new_Vector2f(L) = data;
     return 1;
 }
 
@@ -9749,8 +10231,7 @@ static int Location_get_distance_NED(lua_State *L) {
     const Vector3f &data = ud->get_distance_NED(
             data_2);
 
-    new_Vector3f(L);
-    *check_Vector3f(L, -1) = data;
+    *new_Vector3f(L) = data;
     return 1;
 }
 
@@ -9774,8 +10255,11 @@ static int Location_get_vector_from_origin_NEU(lua_State *L) {
             data_5002));
 
     if (data) {
-        new_Vector3f(L);
-        *check_Vector3f(L, -1) = data_5002;
+#if 2 > LUA_MINSTACK
+        luaL_checkstack(L, 2, nullptr);
+#endif
+
+        *new_Vector3f(L) = data_5002;
         return 1;
     }
     return 0;
@@ -9849,13 +10333,38 @@ const luaL_Reg AP_Filesystem__stat_t_meta[] = {
 };
 
 static int AP_Filesystem__stat_t_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,AP_Filesystem__stat_t_meta,ARRAY_SIZE(AP_Filesystem__stat_t_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,AP_Filesystem__stat_t_meta,ARRAY_SIZE(AP_Filesystem__stat_t_meta));
 }
 #endif // AP_FILESYSTEM_FILE_READING_ENABLED
+
+const luaL_Reg uint64_t_meta[] = {
+    {"split", uint64_t_split},
+    {"tofloat", uint64_t_tofloat},
+    {"toint", uint64_t_toint},
+};
+
+const luaL_Reg uint64_t_operators[] = {
+    {"__add", uint64_t___add},
+    {"__sub", uint64_t___sub},
+    {"__mul", uint64_t___mul},
+    {"__div", uint64_t___div},
+    {"__mod", uint64_t___mod},
+    {"__band", uint64_t___band},
+    {"__bor", uint64_t___bor},
+    {"__bxor", uint64_t___bxor},
+    {"__shl", uint64_t___shl},
+    {"__shr", uint64_t___shr},
+    {"__eq", uint64_t___eq},
+    {"__lt", uint64_t___lt},
+    {"__le", uint64_t___le},
+    {"__bnot", uint64_t___bnot},
+    {"__tostring", uint64_t___tostring},
+    {NULL, NULL},
+};
+
+static int uint64_t_index(lua_State *L) {
+    return load_function(L,uint64_t_meta,ARRAY_SIZE(uint64_t_meta));
+}
 
 const luaL_Reg uint32_t_meta[] = {
     {"tofloat", uint32_t_tofloat},
@@ -9863,31 +10372,27 @@ const luaL_Reg uint32_t_meta[] = {
 };
 
 const luaL_Reg uint32_t_operators[] = {
-    {"__tostring", uint32_t___tostring},
-    {"__bnot", uint32_t___bnot},
-    {"__le", uint32_t___le},
-    {"__lt", uint32_t___lt},
-    {"__eq", uint32_t___eq},
-    {"__shr", uint32_t___shr},
-    {"__shl", uint32_t___shl},
-    {"__bxor", uint32_t___bxor},
-    {"__bor", uint32_t___bor},
-    {"__band", uint32_t___band},
-    {"__idiv", uint32_t___div},
-    {"__mod", uint32_t___mod},
-    {"__div", uint32_t___div},
-    {"__mul", uint32_t___mul},
-    {"__sub", uint32_t___sub},
     {"__add", uint32_t___add},
+    {"__sub", uint32_t___sub},
+    {"__mul", uint32_t___mul},
+    {"__div", uint32_t___div},
+    {"__mod", uint32_t___mod},
+    {"__band", uint32_t___band},
+    {"__bor", uint32_t___bor},
+    {"__bxor", uint32_t___bxor},
+    {"__shl", uint32_t___shl},
+    {"__shr", uint32_t___shr},
+    {"__eq", uint32_t___eq},
+    {"__lt", uint32_t___lt},
+    {"__le", uint32_t___le},
+    {"__bnot", uint32_t___bnot},
+    {"__tostring", uint32_t___tostring},
+    {"__idiv", uint32_t___div},
     {NULL, NULL},
 };
 
 static int uint32_t_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,uint32_t_meta,ARRAY_SIZE(uint32_t_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,uint32_t_meta,ARRAY_SIZE(uint32_t_meta));
 }
 
 #if (AP_EFI_SCRIPTING_ENABLED == 1)
@@ -9916,11 +10421,7 @@ const luaL_Reg EFI_State_meta[] = {
 };
 
 static int EFI_State_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,EFI_State_meta,ARRAY_SIZE(EFI_State_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,EFI_State_meta,ARRAY_SIZE(EFI_State_meta));
 }
 #endif // (AP_EFI_SCRIPTING_ENABLED == 1)
 
@@ -9936,11 +10437,7 @@ const luaL_Reg Cylinder_Status_meta[] = {
 };
 
 static int Cylinder_Status_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,Cylinder_Status_meta,ARRAY_SIZE(Cylinder_Status_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,Cylinder_Status_meta,ARRAY_SIZE(Cylinder_Status_meta));
 }
 #endif // (AP_EFI_SCRIPTING_ENABLED == 1)
 
@@ -9958,11 +10455,7 @@ const luaL_Reg AP_Camera__camera_state_t_meta[] = {
 };
 
 static int AP_Camera__camera_state_t_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,AP_Camera__camera_state_t_meta,ARRAY_SIZE(AP_Camera__camera_state_t_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,AP_Camera__camera_state_t_meta,ARRAY_SIZE(AP_Camera__camera_state_t_meta));
 }
 #endif // AP_CAMERA_ENABLED && (AP_CAMERA_SCRIPTING_ENABLED == 1)
 
@@ -9978,11 +10471,7 @@ const luaL_Reg AP_HAL__CANFrame_meta[] = {
 };
 
 static int AP_HAL__CANFrame_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,AP_HAL__CANFrame_meta,ARRAY_SIZE(AP_HAL__CANFrame_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,AP_HAL__CANFrame_meta,ARRAY_SIZE(AP_HAL__CANFrame_meta));
 }
 #endif // AP_SCRIPTING_CAN_SENSOR_ENABLED
 
@@ -9995,11 +10484,7 @@ const luaL_Reg AP_MotorsMatrix_Scripting_Dynamic__factor_table_meta[] = {
 };
 
 static int AP_MotorsMatrix_Scripting_Dynamic__factor_table_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,AP_MotorsMatrix_Scripting_Dynamic__factor_table_meta,ARRAY_SIZE(AP_MotorsMatrix_Scripting_Dynamic__factor_table_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,AP_MotorsMatrix_Scripting_Dynamic__factor_table_meta,ARRAY_SIZE(AP_MotorsMatrix_Scripting_Dynamic__factor_table_meta));
 }
 #endif // APM_BUILD_TYPE(APM_BUILD_ArduPlane)||APM_BUILD_COPTER_OR_HELI
 
@@ -10019,11 +10504,7 @@ const luaL_Reg mavlink_mission_item_int_t_meta[] = {
 };
 
 static int mavlink_mission_item_int_t_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,mavlink_mission_item_int_t_meta,ARRAY_SIZE(mavlink_mission_item_int_t_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,mavlink_mission_item_int_t_meta,ARRAY_SIZE(mavlink_mission_item_int_t_meta));
 }
 #endif // AP_MISSION_ENABLED
 
@@ -10038,11 +10519,7 @@ const luaL_Reg Parameter_meta[] = {
 };
 
 static int Parameter_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,Parameter_meta,ARRAY_SIZE(Parameter_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,Parameter_meta,ARRAY_SIZE(Parameter_meta));
 }
 
 #if (HAL_WITH_ESC_TELEM == 1)
@@ -10055,15 +10532,25 @@ const luaL_Reg AP_ESC_Telem_Backend__TelemetryData_meta[] = {
 };
 
 static int AP_ESC_Telem_Backend__TelemetryData_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,AP_ESC_Telem_Backend__TelemetryData_meta,ARRAY_SIZE(AP_ESC_Telem_Backend__TelemetryData_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,AP_ESC_Telem_Backend__TelemetryData_meta,ARRAY_SIZE(AP_ESC_Telem_Backend__TelemetryData_meta));
 }
 #endif // (HAL_WITH_ESC_TELEM == 1)
 
-#if (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RANGEFINDER))
+const luaL_Reg AP_Scripting_SerialAccess_meta[] = {
+    {"set_flow_control", AP_Scripting_SerialAccess_set_flow_control},
+    {"available", AP_Scripting_SerialAccess_available},
+    {"read", AP_Scripting_SerialAccess_read},
+    {"write", AP_Scripting_SerialAccess_write},
+    {"begin", AP_Scripting_SerialAccess_begin},
+    {"readstring", lua_serial_readstring},
+    {"writestring", lua_serial_writestring},
+};
+
+static int AP_Scripting_SerialAccess_index(lua_State *L) {
+    return load_function(L,AP_Scripting_SerialAccess_meta,ARRAY_SIZE(AP_Scripting_SerialAccess_meta));
+}
+
+#if AP_RANGEFINDER_ENABLED
 const luaL_Reg RangeFinder__RangeFinder_State_meta[] = {
     {"voltage", RangeFinder__RangeFinder_State_voltage_mv},
     {"signal_quality", RangeFinder__RangeFinder_State_signal_quality_pct},
@@ -10074,13 +10561,9 @@ const luaL_Reg RangeFinder__RangeFinder_State_meta[] = {
 };
 
 static int RangeFinder__RangeFinder_State_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,RangeFinder__RangeFinder_State_meta,ARRAY_SIZE(RangeFinder__RangeFinder_State_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,RangeFinder__RangeFinder_State_meta,ARRAY_SIZE(RangeFinder__RangeFinder_State_meta));
 }
-#endif // (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RANGEFINDER))
+#endif // AP_RANGEFINDER_ENABLED
 
 #if AP_AHRS_ENABLED
 const luaL_Reg Quaternion_meta[] = {
@@ -10107,11 +10590,7 @@ const luaL_Reg Quaternion_operators[] = {
 };
 
 static int Quaternion_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,Quaternion_meta,ARRAY_SIZE(Quaternion_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,Quaternion_meta,ARRAY_SIZE(Quaternion_meta));
 }
 #endif // AP_AHRS_ENABLED
 
@@ -10135,11 +10614,7 @@ const luaL_Reg Vector2f_operators[] = {
 };
 
 static int Vector2f_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,Vector2f_meta,ARRAY_SIZE(Vector2f_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,Vector2f_meta,ARRAY_SIZE(Vector2f_meta));
 }
 
 const luaL_Reg Vector3f_meta[] = {
@@ -10167,11 +10642,7 @@ const luaL_Reg Vector3f_operators[] = {
 };
 
 static int Vector3f_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,Vector3f_meta,ARRAY_SIZE(Vector3f_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,Vector3f_meta,ARRAY_SIZE(Vector3f_meta));
 }
 
 #if AP_BATTERY_SCRIPTING_ENABLED
@@ -10189,11 +10660,7 @@ const luaL_Reg BattMonitorScript_State_meta[] = {
 };
 
 static int BattMonitorScript_State_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,BattMonitorScript_State_meta,ARRAY_SIZE(BattMonitorScript_State_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,BattMonitorScript_State_meta,ARRAY_SIZE(BattMonitorScript_State_meta));
 }
 #endif // AP_BATTERY_SCRIPTING_ENABLED
 
@@ -10221,11 +10688,7 @@ const luaL_Reg Location_meta[] = {
 };
 
 static int Location_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,Location_meta,ARRAY_SIZE(Location_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,Location_meta,ARRAY_SIZE(Location_meta));
 }
 
 #if (AP_EFI_SCRIPTING_ENABLED == 1)
@@ -10267,8 +10730,11 @@ static int ScriptingCANBuffer_read_frame(lua_State *L) {
             data_5002));
 
     if (data) {
-        new_AP_HAL__CANFrame(L);
-        *check_AP_HAL__CANFrame(L, -1) = data_5002;
+#if 2 > LUA_MINSTACK
+        luaL_checkstack(L, 2, nullptr);
+#endif
+
+        *new_AP_HAL__CANFrame(L) = data_5002;
         return 1;
     }
     return 0;
@@ -10537,60 +11003,6 @@ static int AP_HAL__I2CDevice_set_retries(lua_State *L) {
     return 0;
 }
 
-static int AP_HAL__UARTDriver_set_flow_control(lua_State *L) {
-    binding_argcheck(L, 2);
-    AP_HAL::UARTDriver * ud = *check_AP_HAL__UARTDriver(L, 1);
-    const lua_Integer raw_data_2 = get_integer(L, 2, static_cast<int32_t>(AP_HAL::UARTDriver::FLOW_CONTROL_DISABLE), static_cast<int32_t>(AP_HAL::UARTDriver::FLOW_CONTROL_AUTO));
-    const AP_HAL::UARTDriver::flow_control data_2 = static_cast<AP_HAL::UARTDriver::flow_control>(raw_data_2);
-    ud->set_flow_control(
-            data_2);
-
-    return 0;
-}
-
-static int AP_HAL__UARTDriver_available(lua_State *L) {
-    binding_argcheck(L, 1);
-    AP_HAL::UARTDriver * ud = *check_AP_HAL__UARTDriver(L, 1);
-    const uint32_t data = static_cast<uint32_t>(ud->available());
-
-        new_uint32_t(L);
-        *static_cast<uint32_t *>(luaL_checkudata(L, -1, "uint32_t")) = data;
-    return 1;
-}
-
-static int AP_HAL__UARTDriver_write(lua_State *L) {
-    binding_argcheck(L, 2);
-    AP_HAL::UARTDriver * ud = *check_AP_HAL__UARTDriver(L, 1);
-    const uint8_t raw_data_2 = get_uint8_t(L, 2);
-    const uint8_t data_2 = static_cast<uint8_t>(raw_data_2);
-    const uint32_t data = static_cast<uint32_t>(ud->write(
-            data_2));
-
-        new_uint32_t(L);
-        *static_cast<uint32_t *>(luaL_checkudata(L, -1, "uint32_t")) = data;
-    return 1;
-}
-
-static int AP_HAL__UARTDriver_read(lua_State *L) {
-    binding_argcheck(L, 1);
-    AP_HAL::UARTDriver * ud = *check_AP_HAL__UARTDriver(L, 1);
-    const int16_t data = static_cast<int16_t>(ud->read());
-
-    lua_pushinteger(L, data);
-    return 1;
-}
-
-static int AP_HAL__UARTDriver_begin(lua_State *L) {
-    binding_argcheck(L, 2);
-    AP_HAL::UARTDriver * ud = *check_AP_HAL__UARTDriver(L, 1);
-    const uint32_t raw_data_2 = get_uint32(L, 2, MAX(1U, 0U), MIN(UINT32_MAX, UINT32_MAX));
-    const uint32_t data_2 = static_cast<uint32_t>(raw_data_2);
-    ud->begin(
-            data_2);
-
-    return 0;
-}
-
 #if AP_RC_CHANNEL_ENABLED
 static int RC_Channel_set_override(lua_State *L) {
     binding_argcheck(L, 2);
@@ -10649,7 +11061,7 @@ static int RC_Channel_norm_input(lua_State *L) {
 }
 #endif // AP_RC_CHANNEL_ENABLED
 
-#if (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RANGEFINDER))
+#if AP_RANGEFINDER_ENABLED
 static int AP_RangeFinder_Backend_get_state(lua_State *L) {
     binding_argcheck(L, 1);
     AP_RangeFinder_Backend * ud = *check_AP_RangeFinder_Backend(L, 1);
@@ -10657,13 +11069,16 @@ static int AP_RangeFinder_Backend_get_state(lua_State *L) {
     ud->get_state(
             data_5002);
 
-    new_RangeFinder__RangeFinder_State(L);
-    *check_RangeFinder__RangeFinder_State(L, -1) = data_5002;
+#if 2 > LUA_MINSTACK
+    luaL_checkstack(L, 2, nullptr);
+#endif
+
+    *new_RangeFinder__RangeFinder_State(L) = data_5002;
     return 1;
 }
-#endif // (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RANGEFINDER))
+#endif // AP_RANGEFINDER_ENABLED
 
-#if (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RANGEFINDER))
+#if AP_RANGEFINDER_ENABLED
 static int AP_RangeFinder_Backend_status(lua_State *L) {
     binding_argcheck(L, 1);
     AP_RangeFinder_Backend * ud = *check_AP_RangeFinder_Backend(L, 1);
@@ -10672,9 +11087,9 @@ static int AP_RangeFinder_Backend_status(lua_State *L) {
     lua_pushinteger(L, data);
     return 1;
 }
-#endif // (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RANGEFINDER))
+#endif // AP_RANGEFINDER_ENABLED
 
-#if (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RANGEFINDER))
+#if AP_RANGEFINDER_ENABLED
 static int AP_RangeFinder_Backend_type(lua_State *L) {
     binding_argcheck(L, 1);
     AP_RangeFinder_Backend * ud = *check_AP_RangeFinder_Backend(L, 1);
@@ -10683,9 +11098,9 @@ static int AP_RangeFinder_Backend_type(lua_State *L) {
     lua_pushinteger(L, data);
     return 1;
 }
-#endif // (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RANGEFINDER))
+#endif // AP_RANGEFINDER_ENABLED
 
-#if (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RANGEFINDER))
+#if AP_RANGEFINDER_ENABLED
 static int AP_RangeFinder_Backend_orientation(lua_State *L) {
     binding_argcheck(L, 1);
     AP_RangeFinder_Backend * ud = *check_AP_RangeFinder_Backend(L, 1);
@@ -10694,9 +11109,9 @@ static int AP_RangeFinder_Backend_orientation(lua_State *L) {
     lua_pushinteger(L, data);
     return 1;
 }
-#endif // (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RANGEFINDER))
+#endif // AP_RANGEFINDER_ENABLED
 
-#if (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RANGEFINDER))
+#if AP_RANGEFINDER_ENABLED
 static int AP_RangeFinder_Backend_signal_quality_pct(lua_State *L) {
     binding_argcheck(L, 1);
     AP_RangeFinder_Backend * ud = *check_AP_RangeFinder_Backend(L, 1);
@@ -10705,9 +11120,9 @@ static int AP_RangeFinder_Backend_signal_quality_pct(lua_State *L) {
     lua_pushnumber(L, data);
     return 1;
 }
-#endif // (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RANGEFINDER))
+#endif // AP_RANGEFINDER_ENABLED
 
-#if (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RANGEFINDER))
+#if AP_RANGEFINDER_ENABLED
 static int AP_RangeFinder_Backend_distance(lua_State *L) {
     binding_argcheck(L, 1);
     AP_RangeFinder_Backend * ud = *check_AP_RangeFinder_Backend(L, 1);
@@ -10716,7 +11131,7 @@ static int AP_RangeFinder_Backend_distance(lua_State *L) {
     lua_pushnumber(L, data);
     return 1;
 }
-#endif // (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RANGEFINDER))
+#endif // AP_RANGEFINDER_ENABLED
 
 #if HAL_PROXIMITY_ENABLED == 1
 static int AP_Proximity_Backend_update_virtual_boundary(lua_State *L) {
@@ -10800,11 +11215,7 @@ const luaL_Reg AP_EFI_Backend_meta[] = {
 };
 
 static int AP_EFI_Backend_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,AP_EFI_Backend_meta,ARRAY_SIZE(AP_EFI_Backend_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,AP_EFI_Backend_meta,ARRAY_SIZE(AP_EFI_Backend_meta));
 }
 #endif // (AP_EFI_SCRIPTING_ENABLED == 1)
 
@@ -10816,11 +11227,7 @@ const luaL_Reg ScriptingCANBuffer_meta[] = {
 };
 
 static int ScriptingCANBuffer_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,ScriptingCANBuffer_meta,ARRAY_SIZE(ScriptingCANBuffer_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,ScriptingCANBuffer_meta,ARRAY_SIZE(ScriptingCANBuffer_meta));
 }
 #endif // AP_SCRIPTING_CAN_SENSOR_ENABLED
 
@@ -10831,11 +11238,7 @@ const luaL_Reg AP_HAL__PWMSource_meta[] = {
 };
 
 static int AP_HAL__PWMSource_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,AP_HAL__PWMSource_meta,ARRAY_SIZE(AP_HAL__PWMSource_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,AP_HAL__PWMSource_meta,ARRAY_SIZE(AP_HAL__PWMSource_meta));
 }
 
 #if !defined(HAL_DISABLE_ADC_DRIVER)
@@ -10847,11 +11250,7 @@ const luaL_Reg AP_HAL__AnalogSource_meta[] = {
 };
 
 static int AP_HAL__AnalogSource_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,AP_HAL__AnalogSource_meta,ARRAY_SIZE(AP_HAL__AnalogSource_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,AP_HAL__AnalogSource_meta,ARRAY_SIZE(AP_HAL__AnalogSource_meta));
 }
 #endif // !defined(HAL_DISABLE_ADC_DRIVER)
 
@@ -10873,11 +11272,7 @@ const luaL_Reg SocketAPM_meta[] = {
 };
 
 static int SocketAPM_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,SocketAPM_meta,ARRAY_SIZE(SocketAPM_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,SocketAPM_meta,ARRAY_SIZE(SocketAPM_meta));
 }
 #endif // (AP_NETWORKING_ENABLED==1)
 
@@ -10885,32 +11280,12 @@ const luaL_Reg AP_HAL__I2CDevice_meta[] = {
     {"set_address", AP_HAL__I2CDevice_set_address},
     {"write_register", AP_HAL__I2CDevice_write_register},
     {"set_retries", AP_HAL__I2CDevice_set_retries},
+    {"transfer", AP_HAL__I2CDevice_transfer},
     {"read_registers", AP_HAL__I2CDevice_read_registers},
 };
 
 static int AP_HAL__I2CDevice_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,AP_HAL__I2CDevice_meta,ARRAY_SIZE(AP_HAL__I2CDevice_meta),name)) {
-        return 1;
-    }
-    return 0;
-}
-
-const luaL_Reg AP_HAL__UARTDriver_meta[] = {
-    {"set_flow_control", AP_HAL__UARTDriver_set_flow_control},
-    {"available", AP_HAL__UARTDriver_available},
-    {"write", AP_HAL__UARTDriver_write},
-    {"read", AP_HAL__UARTDriver_read},
-    {"begin", AP_HAL__UARTDriver_begin},
-    {"readstring", AP_HAL__UARTDriver_readstring},
-};
-
-static int AP_HAL__UARTDriver_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,AP_HAL__UARTDriver_meta,ARRAY_SIZE(AP_HAL__UARTDriver_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,AP_HAL__I2CDevice_meta,ARRAY_SIZE(AP_HAL__I2CDevice_meta));
 }
 
 #if AP_RC_CHANNEL_ENABLED
@@ -10923,15 +11298,11 @@ const luaL_Reg RC_Channel_meta[] = {
 };
 
 static int RC_Channel_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,RC_Channel_meta,ARRAY_SIZE(RC_Channel_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,RC_Channel_meta,ARRAY_SIZE(RC_Channel_meta));
 }
 #endif // AP_RC_CHANNEL_ENABLED
 
-#if (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RANGEFINDER))
+#if AP_RANGEFINDER_ENABLED
 const luaL_Reg AP_RangeFinder_Backend_meta[] = {
     {"get_state", AP_RangeFinder_Backend_get_state},
     {"status", AP_RangeFinder_Backend_status},
@@ -10943,13 +11314,9 @@ const luaL_Reg AP_RangeFinder_Backend_meta[] = {
 };
 
 static int AP_RangeFinder_Backend_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,AP_RangeFinder_Backend_meta,ARRAY_SIZE(AP_RangeFinder_Backend_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,AP_RangeFinder_Backend_meta,ARRAY_SIZE(AP_RangeFinder_Backend_meta));
 }
-#endif // (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RANGEFINDER))
+#endif // AP_RANGEFINDER_ENABLED
 
 #if HAL_PROXIMITY_ENABLED == 1
 const luaL_Reg AP_Proximity_Backend_meta[] = {
@@ -10961,18 +11328,69 @@ const luaL_Reg AP_Proximity_Backend_meta[] = {
 };
 
 static int AP_Proximity_Backend_index(lua_State *L) {
-    const char * name = luaL_checkstring(L, 2);
-    if (load_function(L,AP_Proximity_Backend_meta,ARRAY_SIZE(AP_Proximity_Backend_meta),name)) {
-        return 1;
-    }
-    return 0;
+    return load_function(L,AP_Proximity_Backend_meta,ARRAY_SIZE(AP_Proximity_Backend_meta));
 }
 #endif // HAL_PROXIMITY_ENABLED == 1
+
+const struct userdata {
+    const char *name;
+    const lua_CFunction fun;
+} new_userdata[] = {
+#if AP_FILESYSTEM_FILE_READING_ENABLED
+    {"stat_t", lua_new_AP_Filesystem__stat_t},
+#endif // AP_FILESYSTEM_FILE_READING_ENABLED
+    {"uint64_t", lua_new_uint64_t},
+    {"uint32_t", lua_new_uint32_t},
+#if (AP_EFI_SCRIPTING_ENABLED == 1)
+    {"EFI_State", lua_new_EFI_State},
+#endif // (AP_EFI_SCRIPTING_ENABLED == 1)
+#if (AP_EFI_SCRIPTING_ENABLED == 1)
+    {"Cylinder_Status", lua_new_Cylinder_Status},
+#endif // (AP_EFI_SCRIPTING_ENABLED == 1)
+#if AP_SCRIPTING_CAN_SENSOR_ENABLED
+    {"CANFrame", lua_new_AP_HAL__CANFrame},
+#endif // AP_SCRIPTING_CAN_SENSOR_ENABLED
+#if APM_BUILD_TYPE(APM_BUILD_ArduPlane)||APM_BUILD_COPTER_OR_HELI
+    {"motor_factor_table", lua_new_AP_MotorsMatrix_Scripting_Dynamic__factor_table},
+#endif // APM_BUILD_TYPE(APM_BUILD_ArduPlane)||APM_BUILD_COPTER_OR_HELI
+#if AP_MISSION_ENABLED
+    {"mavlink_mission_item_int_t", lua_new_mavlink_mission_item_int_t},
+#endif // AP_MISSION_ENABLED
+    {"Parameter", lua_new_Parameter},
+#if (HAL_WITH_ESC_TELEM == 1)
+    {"ESCTelemetryData", lua_new_AP_ESC_Telem_Backend__TelemetryData},
+#endif // (HAL_WITH_ESC_TELEM == 1)
+#if AP_RANGEFINDER_ENABLED
+    {"RangeFinder_State", lua_new_RangeFinder__RangeFinder_State},
+#endif // AP_RANGEFINDER_ENABLED
+#if AP_AHRS_ENABLED
+    {"Quaternion", lua_new_Quaternion},
+#endif // AP_AHRS_ENABLED
+    {"Vector2f", lua_new_Vector2f},
+    {"Vector3f", lua_new_Vector3f},
+#if AP_BATTERY_SCRIPTING_ENABLED
+    {"BattMonitorScript_State", lua_new_BattMonitorScript_State},
+#endif // AP_BATTERY_SCRIPTING_ENABLED
+    {"Location", lua_new_Location},
+    {"print", lua_print},
+    {"remove", lua_removefile},
+    {"dirlist", lua_dirlist},
+#if AP_MISSION_ENABLED
+    {"mission_receive", lua_mission_receive},
+#endif // AP_MISSION_ENABLED
+    {"micros", lua_micros},
+    {"millis", lua_millis},
+    {"PWMSource", lua_get_PWMSource},
+#if (AP_NETWORKING_ENABLED==1)
+    {"Socket", lua_get_SocketAPM},
+#endif // (AP_NETWORKING_ENABLED==1)
+};
 
 const struct userdata_meta userdata_fun[] = {
 #if AP_FILESYSTEM_FILE_READING_ENABLED
     {"stat_t", AP_Filesystem__stat_t_index, nullptr},
 #endif // AP_FILESYSTEM_FILE_READING_ENABLED
+    {"uint64_t", uint64_t_index, uint64_t_operators},
     {"uint32_t", uint32_t_index, uint32_t_operators},
 #if (AP_EFI_SCRIPTING_ENABLED == 1)
     {"EFI_State", EFI_State_index, nullptr},
@@ -10996,9 +11414,10 @@ const struct userdata_meta userdata_fun[] = {
 #if (HAL_WITH_ESC_TELEM == 1)
     {"ESCTelemetryData", AP_ESC_Telem_Backend__TelemetryData_index, nullptr},
 #endif // (HAL_WITH_ESC_TELEM == 1)
-#if (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RANGEFINDER))
+    {"AP_Scripting_SerialAccess", AP_Scripting_SerialAccess_index, nullptr},
+#if AP_RANGEFINDER_ENABLED
     {"RangeFinder_State", RangeFinder__RangeFinder_State_index, nullptr},
-#endif // (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RANGEFINDER))
+#endif // AP_RANGEFINDER_ENABLED
 #if AP_AHRS_ENABLED
     {"Quaternion", Quaternion_index, Quaternion_operators},
 #endif // AP_AHRS_ENABLED
@@ -11011,6 +11430,9 @@ const struct userdata_meta userdata_fun[] = {
 };
 
 const struct luaL_Reg singleton_fun[] = {
+#if HAL_VISUALODOM_ENABLED
+    {"visual_odom", AP_VisualOdom_index},
+#endif // HAL_VISUALODOM_ENABLED
 #if AP_NETWORKING_ENABLED
     {"networking", AP_Networking_index},
 #endif // AP_NETWORKING_ENABLED
@@ -11031,9 +11453,9 @@ const struct luaL_Reg singleton_fun[] = {
 #if (AP_EFI_SCRIPTING_ENABLED == 1)
     {"efi", AP_EFI_index},
 #endif // (AP_EFI_SCRIPTING_ENABLED == 1)
-#if (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_MAG))
+#if AP_COMPASS_ENABLED
     {"compass", Compass_index},
-#endif // (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_MAG))
+#endif // AP_COMPASS_ENABLED
 #if HAL_WITH_IO_MCU
     {"iomcu", AP_IOMCU_index},
 #endif // HAL_WITH_IO_MCU
@@ -11055,6 +11477,9 @@ const struct luaL_Reg singleton_fun[] = {
 #if APM_BUILD_TYPE(APM_BUILD_ArduPlane)||APM_BUILD_COPTER_OR_HELI
     {"AC_AttitudeControl", AC_AttitudeControl_index},
 #endif // APM_BUILD_TYPE(APM_BUILD_ArduPlane)||APM_BUILD_COPTER_OR_HELI
+#if AC_PRECLAND_ENABLED && (APM_BUILD_TYPE(APM_BUILD_ArduPlane)||APM_BUILD_COPTER_OR_HELI)
+    {"precland", AC_PrecLand_index},
+#endif // AC_PRECLAND_ENABLED && (APM_BUILD_TYPE(APM_BUILD_ArduPlane)||APM_BUILD_COPTER_OR_HELI)
 #if AP_FOLLOW_ENABLED && (APM_BUILD_TYPE(APM_BUILD_ArduPlane)||APM_BUILD_COPTER_OR_HELI)
     {"follow", AP_Follow_index},
 #endif // AP_FOLLOW_ENABLED && (APM_BUILD_TYPE(APM_BUILD_ArduPlane)||APM_BUILD_COPTER_OR_HELI)
@@ -11119,9 +11544,9 @@ const struct luaL_Reg singleton_fun[] = {
 #if (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_BARO))
     {"baro", AP_Baro_index},
 #endif // (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_BARO))
-#if HAL_GCS_ENABLED
-    {"serial", AP_SerialManager_index},
-#endif // HAL_GCS_ENABLED
+#if AP_SERIALMANAGER_ENABLED
+    {"serial", serial_index},
+#endif // AP_SERIALMANAGER_ENABLED
 #if AP_RC_CHANNEL_ENABLED
     {"rc", RC_Channels_index},
 #endif // AP_RC_CHANNEL_ENABLED
@@ -11146,9 +11571,9 @@ const struct luaL_Reg singleton_fun[] = {
 #if defined(AP_TERRAIN_AVAILABLE) && AP_TERRAIN_AVAILABLE == 1
     {"terrain", AP_Terrain_index},
 #endif // defined(AP_TERRAIN_AVAILABLE) && AP_TERRAIN_AVAILABLE == 1
-#if (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RANGEFINDER))
+#if AP_RANGEFINDER_ENABLED
     {"rangefinder", RangeFinder_index},
-#endif // (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RANGEFINDER))
+#endif // AP_RANGEFINDER_ENABLED
 #if HAL_PROXIMITY_ENABLED == 1
     {"proximity", AP_Proximity_index},
 #endif // HAL_PROXIMITY_ENABLED == 1
@@ -11161,9 +11586,9 @@ const struct luaL_Reg singleton_fun[] = {
 #if AP_BATTERY_ENABLED
     {"battery", AP_BattMonitor_index},
 #endif // AP_BATTERY_ENABLED
-#if (!defined(HAL_BUILD_AP_PERIPH))
+#if AP_ARMING_ENABLED
     {"arming", AP_Arming_index},
-#endif // (!defined(HAL_BUILD_AP_PERIPH))
+#endif // AP_ARMING_ENABLED
 #if AP_AHRS_ENABLED
     {"ahrs", AP_AHRS_index},
 #endif // AP_AHRS_ENABLED
@@ -11184,134 +11609,82 @@ const struct luaL_Reg ap_object_fun[] = {
     {"SocketAPM", SocketAPM_index},
 #endif // (AP_NETWORKING_ENABLED==1)
     {"AP_HAL::I2CDevice", AP_HAL__I2CDevice_index},
-    {"AP_HAL::UARTDriver", AP_HAL__UARTDriver_index},
 #if AP_RC_CHANNEL_ENABLED
     {"RC_Channel", RC_Channel_index},
 #endif // AP_RC_CHANNEL_ENABLED
-#if (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RANGEFINDER))
+#if AP_RANGEFINDER_ENABLED
     {"AP_RangeFinder_Backend", AP_RangeFinder_Backend_index},
-#endif // (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RANGEFINDER))
+#endif // AP_RANGEFINDER_ENABLED
 #if HAL_PROXIMITY_ENABLED == 1
     {"AP_Proximity_Backend", AP_Proximity_Backend_index},
 #endif // HAL_PROXIMITY_ENABLED == 1
 };
 
+static int binding_index(lua_State *L) {
+    const char * name = luaL_checkstring(L, 2);
+
+    bool found = false;
+    for (uint32_t i = 0; i < ARRAY_SIZE(singleton_fun); i++) {
+        if (strcmp(name, singleton_fun[i].name) == 0) {
+            lua_newuserdata(L, 0);
+            if (luaL_newmetatable(L, name)) { // need to create metatable
+                lua_pushcfunction(L, singleton_fun[i].func);
+                lua_setfield(L, -2, "__index");
+            }
+            lua_setmetatable(L, -2);
+            found = true;
+            break;
+        }
+    }
+    if (!found) {
+        for (uint32_t i = 0; i < ARRAY_SIZE(new_userdata); i++) {
+            if (strcmp(name, new_userdata[i].name) == 0) {
+                lua_pushcfunction(L, new_userdata[i].fun);
+                found = true;
+                break;
+            }
+        }
+    }
+    if (!found) {
+        return 0;
+    }
+
+    // store found value to avoid a re-index
+    lua_pushvalue(L, -2);
+    lua_pushvalue(L, -2);
+    lua_settable(L, -5);
+
+    return 1;
+}
+
 void load_generated_bindings(lua_State *L) {
-    luaL_checkstack(L, 5, "Out of stack");
+    luaL_checkstack(L, 5, nullptr);
     // userdata metatables
     for (uint32_t i = 0; i < ARRAY_SIZE(userdata_fun); i++) {
         luaL_newmetatable(L, userdata_fun[i].name);
-        lua_pushcclosure(L, userdata_fun[i].func, 0);
+        lua_pushcfunction(L, userdata_fun[i].func);
         lua_setfield(L, -2, "__index");
         if (userdata_fun[i].operators != nullptr) {
             luaL_setfuncs(L, userdata_fun[i].operators, 0);
         }
-        lua_pushstring(L, "__call");
-        lua_pushvalue(L, -2);
-        lua_settable(L, -3);
         lua_pop(L, 1);
-        lua_newuserdata(L, 0);
-        luaL_getmetatable(L, userdata_fun[i].name);
-        lua_setmetatable(L, -2);
-        lua_setglobal(L, userdata_fun[i].name);
     }
 
     // ap object metatables
     for (uint32_t i = 0; i < ARRAY_SIZE(ap_object_fun); i++) {
         luaL_newmetatable(L, ap_object_fun[i].name);
-        lua_pushcclosure(L, ap_object_fun[i].func, 0);
+        lua_pushcfunction(L, ap_object_fun[i].func);
         lua_setfield(L, -2, "__index");
-        lua_pushstring(L, "__call");
-        lua_pushvalue(L, -2);
-        lua_settable(L, -3);
         lua_pop(L, 1);
-        lua_newuserdata(L, 0);
-        luaL_getmetatable(L, ap_object_fun[i].name);
-        lua_setmetatable(L, -2);
-        lua_setglobal(L, ap_object_fun[i].name);
     }
 
-    // singleton metatables
-    for (uint32_t i = 0; i < ARRAY_SIZE(singleton_fun); i++) {
-        luaL_newmetatable(L, singleton_fun[i].name);
-        lua_pushcclosure(L, singleton_fun[i].func, 0);
-        lua_setfield(L, -2, "__index");
-        lua_pushstring(L, "__call");
-        lua_pushvalue(L, -2);
-        lua_settable(L, -3);
-        lua_pop(L, 1);
-        lua_newuserdata(L, 0);
-        luaL_getmetatable(L, singleton_fun[i].name);
-        lua_setmetatable(L, -2);
-        lua_setglobal(L, singleton_fun[i].name);
-    }
-
+    // singletons and userdata creation funcs are loaded dynamically
 }
 
-const struct userdata {
-    const char *name;
-    const lua_CFunction fun;
-} new_userdata[] = {
-#if AP_FILESYSTEM_FILE_READING_ENABLED
-    {"stat_t", lua_new_AP_Filesystem__stat_t},
-#endif // AP_FILESYSTEM_FILE_READING_ENABLED
-    {"uint32_t", lua_new_uint32_t},
-#if (AP_EFI_SCRIPTING_ENABLED == 1)
-    {"EFI_State", lua_new_EFI_State},
-#endif // (AP_EFI_SCRIPTING_ENABLED == 1)
-#if (AP_EFI_SCRIPTING_ENABLED == 1)
-    {"Cylinder_Status", lua_new_Cylinder_Status},
-#endif // (AP_EFI_SCRIPTING_ENABLED == 1)
-#if AP_SCRIPTING_CAN_SENSOR_ENABLED
-    {"CANFrame", lua_new_AP_HAL__CANFrame},
-#endif // AP_SCRIPTING_CAN_SENSOR_ENABLED
-#if APM_BUILD_TYPE(APM_BUILD_ArduPlane)||APM_BUILD_COPTER_OR_HELI
-    {"motor_factor_table", lua_new_AP_MotorsMatrix_Scripting_Dynamic__factor_table},
-#endif // APM_BUILD_TYPE(APM_BUILD_ArduPlane)||APM_BUILD_COPTER_OR_HELI
-#if AP_MISSION_ENABLED
-    {"mavlink_mission_item_int_t", lua_new_mavlink_mission_item_int_t},
-#endif // AP_MISSION_ENABLED
-    {"Parameter", lua_new_Parameter},
-#if (HAL_WITH_ESC_TELEM == 1)
-    {"ESCTelemetryData", lua_new_AP_ESC_Telem_Backend__TelemetryData},
-#endif // (HAL_WITH_ESC_TELEM == 1)
-#if (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RANGEFINDER))
-    {"RangeFinder_State", lua_new_RangeFinder__RangeFinder_State},
-#endif // (!defined(HAL_BUILD_AP_PERIPH) || defined(HAL_PERIPH_ENABLE_RANGEFINDER))
-#if AP_AHRS_ENABLED
-    {"Quaternion", lua_new_Quaternion},
-#endif // AP_AHRS_ENABLED
-    {"Vector2f", lua_new_Vector2f},
-    {"Vector3f", lua_new_Vector3f},
-#if AP_BATTERY_SCRIPTING_ENABLED
-    {"BattMonitorScript_State", lua_new_BattMonitorScript_State},
-#endif // AP_BATTERY_SCRIPTING_ENABLED
-    {"Location", lua_new_Location},
-    {"print", lua_print},
-    {"remove", lua_removefile},
-    {"dirlist", lua_dirlist},
-#if AP_MISSION_ENABLED
-    {"mission_receive", lua_mission_receive},
-#endif // AP_MISSION_ENABLED
-    {"micros", lua_micros},
-    {"millis", lua_millis},
-    {"PWMSource", lua_get_PWMSource},
-#if (AP_NETWORKING_ENABLED==1)
-    {"Socket", lua_get_SocketAPM},
-#endif // (AP_NETWORKING_ENABLED==1)
-};
-
 void load_generated_sandbox(lua_State *L) {
-    for (uint32_t i = 0; i < ARRAY_SIZE(singleton_fun); i++) {
-        lua_pushstring(L, singleton_fun[i].name);
-        lua_getglobal(L, singleton_fun[i].name);
-        lua_settable(L, -3);
-    }
-    for (uint32_t i = 0; i < ARRAY_SIZE(new_userdata); i++) {
-        lua_pushstring(L, new_userdata[i].name);
-        lua_pushcfunction(L, new_userdata[i].fun);
-        lua_settable(L, -3);
-    }
-
+    lua_createtable(L, 0, 1);
+    lua_pushcfunction(L, binding_index);
+    lua_setfield(L, -2, "__index");
+    lua_setmetatable(L, -2);
 }
 #endif  // AP_SCRIPTING_ENABLED

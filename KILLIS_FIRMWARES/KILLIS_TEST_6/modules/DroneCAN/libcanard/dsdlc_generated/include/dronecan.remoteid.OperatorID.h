@@ -44,26 +44,26 @@ void _dronecan_remoteid_OperatorID_encode(uint8_t* buffer, uint32_t* bit_ofs, st
     (void)msg;
     (void)tao;
 
-    canardEncodeScalar(buffer, *bit_ofs, 5, &msg->id_or_mac.len);
-    *bit_ofs += 5;
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wtype-limits"
-    const size_t id_or_mac_len = msg->id_or_mac.len > 20 ? 20 : msg->id_or_mac.len;
+    const uint8_t id_or_mac_len = msg->id_or_mac.len > 20 ? 20 : msg->id_or_mac.len;
 #pragma GCC diagnostic pop
+    canardEncodeScalar(buffer, *bit_ofs, 5, &id_or_mac_len);
+    *bit_ofs += 5;
     for (size_t i=0; i < id_or_mac_len; i++) {
         canardEncodeScalar(buffer, *bit_ofs, 8, &msg->id_or_mac.data[i]);
         *bit_ofs += 8;
     }
     canardEncodeScalar(buffer, *bit_ofs, 8, &msg->operator_id_type);
     *bit_ofs += 8;
-    if (!tao) {
-        canardEncodeScalar(buffer, *bit_ofs, 5, &msg->operator_id.len);
-        *bit_ofs += 5;
-    }
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wtype-limits"
-    const size_t operator_id_len = msg->operator_id.len > 20 ? 20 : msg->operator_id.len;
+    const uint8_t operator_id_len = msg->operator_id.len > 20 ? 20 : msg->operator_id.len;
 #pragma GCC diagnostic pop
+    if (!tao) {
+        canardEncodeScalar(buffer, *bit_ofs, 5, &operator_id_len);
+        *bit_ofs += 5;
+    }
     for (size_t i=0; i < operator_id_len; i++) {
         canardEncodeScalar(buffer, *bit_ofs, 8, &msg->operator_id.data[i]);
         *bit_ofs += 8;

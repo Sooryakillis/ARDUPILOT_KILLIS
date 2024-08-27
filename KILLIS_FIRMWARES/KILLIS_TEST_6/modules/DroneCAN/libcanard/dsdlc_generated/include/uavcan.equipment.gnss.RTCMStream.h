@@ -47,14 +47,14 @@ void _uavcan_equipment_gnss_RTCMStream_encode(uint8_t* buffer, uint32_t* bit_ofs
 
     canardEncodeScalar(buffer, *bit_ofs, 8, &msg->protocol_id);
     *bit_ofs += 8;
-    if (!tao) {
-        canardEncodeScalar(buffer, *bit_ofs, 8, &msg->data.len);
-        *bit_ofs += 8;
-    }
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wtype-limits"
-    const size_t data_len = msg->data.len > 128 ? 128 : msg->data.len;
+    const uint8_t data_len = msg->data.len > 128 ? 128 : msg->data.len;
 #pragma GCC diagnostic pop
+    if (!tao) {
+        canardEncodeScalar(buffer, *bit_ofs, 8, &data_len);
+        *bit_ofs += 8;
+    }
     for (size_t i=0; i < data_len; i++) {
         canardEncodeScalar(buffer, *bit_ofs, 8, &msg->data.data[i]);
         *bit_ofs += 8;

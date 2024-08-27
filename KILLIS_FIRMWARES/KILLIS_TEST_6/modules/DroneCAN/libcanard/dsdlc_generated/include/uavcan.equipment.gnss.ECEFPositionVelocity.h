@@ -44,14 +44,14 @@ void _uavcan_equipment_gnss_ECEFPositionVelocity_encode(uint8_t* buffer, uint32_
         *bit_ofs += 36;
     }
     *bit_ofs += 6;
-    if (!tao) {
-        canardEncodeScalar(buffer, *bit_ofs, 6, &msg->covariance.len);
-        *bit_ofs += 6;
-    }
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wtype-limits"
-    const size_t covariance_len = msg->covariance.len > 36 ? 36 : msg->covariance.len;
+    const uint8_t covariance_len = msg->covariance.len > 36 ? 36 : msg->covariance.len;
 #pragma GCC diagnostic pop
+    if (!tao) {
+        canardEncodeScalar(buffer, *bit_ofs, 6, &covariance_len);
+        *bit_ofs += 6;
+    }
     for (size_t i=0; i < covariance_len; i++) {
         {
             uint16_t float16_val = canardConvertNativeFloatToFloat16(msg->covariance.data[i]);

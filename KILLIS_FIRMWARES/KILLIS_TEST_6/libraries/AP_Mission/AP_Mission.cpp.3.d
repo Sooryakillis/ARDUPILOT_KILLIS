@@ -29,7 +29,9 @@ libraries/AP_Mission/AP_Mission.cpp.3.o: \
  ../../libraries/AP_HAL/HAL.h ../../libraries/AP_HAL/AnalogIn.h \
  ../../libraries/AP_HAL/GPIO.h ../../libraries/AP_HAL/RCInput.h \
  ../../libraries/AP_HAL/RCOutput.h ../../libraries/AP_HAL/SPIDevice.h \
- ../../libraries/AP_HAL/Device.h ../../libraries/AP_HAL/utility/OwnPtr.h \
+ ../../libraries/AP_HAL/Device.h \
+ ../../libraries/AP_Common/missing/utility \
+ ../../libraries/AP_HAL/utility/OwnPtr.h \
  ../../libraries/AP_Common/missing/cstddef \
  ../../libraries/AP_HAL/WSPIDevice.h ../../libraries/AP_HAL/Storage.h \
  ../../libraries/AP_HAL/UARTDriver.h \
@@ -41,6 +43,8 @@ libraries/AP_Mission/AP_Mission.cpp.3.o: \
  ../../libraries/StorageManager/StorageManager.h \
  ../../libraries/AP_BoardConfig/AP_BoardConfig_config.h \
  ../../libraries/AP_Scripting/AP_Scripting_config.h \
+ ../../libraries/AP_SerialManager/AP_SerialManager_config.h \
+ ../../libraries/AP_Networking/AP_Networking_Config.h \
  ../../libraries/AP_Param/AP_Param_config.h \
  ../../libraries/AP_Math/definitions.h ../../libraries/AP_Math/crc.h \
  ../../libraries/AP_Math/matrix3.h ../../libraries/AP_Math/ftype.h \
@@ -60,8 +64,6 @@ libraries/AP_Mission/AP_Mission.cpp.3.o: \
  ../../libraries/AP_InertialSensor/AP_InertialSensor.h \
  ../../libraries/AP_AccelCal/AP_AccelCal.h \
  ../../libraries/GCS_MAVLink/GCS_MAVLink.h \
- ../../libraries/AP_Networking/AP_Networking_Config.h \
- ../../libraries/AP_SerialManager/AP_SerialManager_config.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/version.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/mavlink_types.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/mavlink.h \
@@ -388,6 +390,7 @@ libraries/AP_Mission/AP_Mission.cpp.3.o: \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../development/development.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../development/./mavlink_msg_mission_checksum.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../development/./mavlink_msg_airspeed.h \
+ libraries/GCS_MAVLink/include/mavlink/v2.0/all/../development/./mavlink_msg_radio_rc_channels.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../development/../standard/standard.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../python_array_test/python_array_test.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../python_array_test/./mavlink_msg_array_test_0.h \
@@ -424,7 +427,6 @@ libraries/AP_Mission/AP_Mission.cpp.3.o: \
  ../../libraries/AP_AccelCal/AccelCalibrator.h \
  ../../libraries/AP_Math/vectorN.h ../../libraries/AP_Math/matrixN.h \
  ../../libraries/Filter/LowPassFilter.h \
- ../../libraries/Filter/FilterClass.h \
  ../../libraries/Filter/HarmonicNotchFilter.h \
  ../../libraries/Filter/NotchFilter.h \
  ../../libraries/AP_InertialSensor/AP_InertialSensor_Params.h \
@@ -439,10 +441,13 @@ libraries/AP_Mission/AP_Mission.cpp.3.o: \
  ../../libraries/AP_AHRS/AP_AHRS_External.h \
  ../../libraries/AP_BoardConfig/AP_BoardConfig.h \
  ../../libraries/AP_RTC/AP_RTC.h ../../libraries/AP_RTC/AP_RTC_config.h \
- ../../libraries/AC_PID/AC_PI.h ../../libraries/AP_Camera/AP_Camera.h \
+ ../../libraries/AC_PID/AC_PI.h \
+ ../../libraries/AP_Radio/AP_Radio_config.h \
+ ../../libraries/AP_Camera/AP_Camera.h \
  ../../libraries/AP_Camera/AP_Camera_config.h \
  ../../libraries/AP_Mount/AP_Mount_config.h \
  ../../libraries/AP_Terrain/AP_Terrain.h \
+ ../../libraries/GCS_MAVLink/ap_message.h \
  ../../libraries/AP_Camera/AP_Camera_Params.h \
  ../../libraries/AP_Camera/AP_Camera_shareddefs.h \
  ../../libraries/AP_Gripper/AP_Gripper_config.h \
@@ -462,6 +467,8 @@ libraries/AP_Mission/AP_Mission.cpp.3.o: \
  ../../libraries/AP_CANManager/AP_CANManager.h \
  ../../libraries/AP_CANManager/AP_CANManager_config.h \
  ../../libraries/AP_CANManager/AP_SLCANIface.h \
+ ../../libraries/AP_Scripting/AP_Scripting_SerialDevice.h \
+ ../../libraries/AP_SerialManager/AP_SerialManager.h \
  ../../libraries/AP_ServoRelayEvents/AP_ServoRelayEvents_config.h \
  ../../libraries/AP_Vehicle/AP_Vehicle_Type.h \
  ../../libraries/GCS_MAVLink/GCS.h \
@@ -475,9 +482,10 @@ libraries/AP_Mission/AP_Mission.cpp.3.o: \
  ../../libraries/AP_GPS/AP_GPS.h ../../libraries/AP_GPS/AP_GPS_config.h \
  ../../libraries/AP_GPS/GPS_detect_state.h ../../libraries/SITL/SIM_GPS.h \
  ../../libraries/SITL/SIM_config.h ../../libraries/AP_GPS/MovingBase.h \
- ../../libraries/AP_SerialManager/AP_SerialManager.h \
  ../../libraries/AP_RangeFinder/AP_RangeFinder_config.h \
  ../../libraries/AP_Winch/AP_Winch_config.h \
  ../../libraries/AP_Arming/AP_Arming_config.h \
- ../../libraries/GCS_MAVLink/ap_message.h \
- ../../libraries/RC_Channel/RC_Channel_config.h
+ ../../libraries/RC_Channel/RC_Channel_config.h \
+ ../../libraries/AC_Fence/AC_Fence.h \
+ ../../libraries/AP_Common/ExpandingString.h \
+ ../../libraries/AC_Fence/AC_PolyFence_loader.h

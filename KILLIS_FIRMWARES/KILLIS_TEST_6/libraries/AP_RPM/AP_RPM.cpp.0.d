@@ -20,11 +20,21 @@ libraries/AP_RPM/AP_RPM.cpp.0.o: ../../libraries/AP_RPM/AP_RPM.cpp \
  ../../libraries/AP_HAL/HAL.h ../../libraries/AP_HAL/AnalogIn.h \
  ../../libraries/AP_HAL/GPIO.h ../../libraries/AP_HAL/RCInput.h \
  ../../libraries/AP_HAL/RCOutput.h ../../libraries/AP_HAL/SPIDevice.h \
- ../../libraries/AP_HAL/Device.h ../../libraries/AP_HAL/utility/OwnPtr.h \
+ ../../libraries/AP_HAL/Device.h \
+ ../../libraries/AP_Common/missing/utility \
+ ../../libraries/AP_HAL/utility/OwnPtr.h \
  ../../libraries/AP_Common/missing/cstddef \
  ../../libraries/AP_HAL/WSPIDevice.h ../../libraries/AP_HAL/Storage.h \
  ../../libraries/AP_HAL/UARTDriver.h \
  ../../libraries/AP_HAL/utility/BetterStream.h \
+ ../../libraries/AP_Logger/AP_Logger_config.h \
+ ../../libraries/AP_Filesystem/AP_Filesystem_config.h \
+ ../../libraries/AP_Mission/AP_Mission_config.h \
+ ../../libraries/GCS_MAVLink/GCS_config.h \
+ ../../libraries/AP_Relay/AP_Relay_config.h \
+ ../../libraries/AP_InertialSensor/AP_InertialSensor_config.h \
+ ../../libraries/AC_Fence/AC_Fence_config.h \
+ ../../libraries/AP_Rally/AP_Rally_config.h \
  ../../libraries/AP_HAL/system.h ../../libraries/AP_HAL/OpticalFlow.h \
  ../../libraries/AP_HAL/DSP.h ../../libraries/AP_HAL/utility/RingBuffer.h \
  ../../libraries/AP_HAL/CANIface.h ../../libraries/AP_HAL/Scheduler.h \
@@ -34,20 +44,12 @@ libraries/AP_RPM/AP_RPM.cpp.0.o: ../../libraries/AP_RPM/AP_RPM.cpp \
  ../../libraries/AP_Param/AP_Param.h \
  ../../libraries/StorageManager/StorageManager.h \
  ../../libraries/AP_BoardConfig/AP_BoardConfig_config.h \
- ../../libraries/AP_Filesystem/AP_Filesystem_config.h \
- ../../libraries/AP_Mission/AP_Mission_config.h \
  ../../libraries/AP_Scripting/AP_Scripting_config.h \
+ ../../libraries/AP_SerialManager/AP_SerialManager_config.h \
+ ../../libraries/AP_Networking/AP_Networking_Config.h \
  ../../libraries/AP_Param/AP_Param_config.h \
  ../../libraries/AP_CANManager/AP_SLCANIface.h \
- ../../libraries/GCS_MAVLink/GCS_config.h \
- ../../libraries/AP_Relay/AP_Relay_config.h \
  ../../libraries/GCS_MAVLink/GCS_MAVLink.h \
- ../../libraries/AP_Networking/AP_Networking_Config.h \
- ../../libraries/AP_SerialManager/AP_SerialManager_config.h \
- ../../libraries/AP_InertialSensor/AP_InertialSensor_config.h \
- ../../libraries/AP_Logger/AP_Logger_config.h \
- ../../libraries/AC_Fence/AC_Fence_config.h \
- ../../libraries/AP_Rally/AP_Rally_config.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/version.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/mavlink_types.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/mavlink.h \
@@ -374,6 +376,7 @@ libraries/AP_RPM/AP_RPM.cpp.0.o: ../../libraries/AP_RPM/AP_RPM.cpp \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../development/development.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../development/./mavlink_msg_mission_checksum.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../development/./mavlink_msg_airspeed.h \
+ libraries/GCS_MAVLink/include/mavlink/v2.0/all/../development/./mavlink_msg_radio_rc_channels.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../development/../standard/standard.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../python_array_test/python_array_test.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../python_array_test/./mavlink_msg_array_test_0.h \
@@ -428,6 +431,232 @@ libraries/AP_RPM/AP_RPM.cpp.0.o: ../../libraries/AP_RPM/AP_RPM.cpp \
  ../../libraries/AP_RPM/RPM_Generator.h \
  ../../libraries/AP_RPM/RPM_HarmonicNotch.h \
  ../../libraries/AP_RPM/RPM_ESC_Telem.h \
+ ../../libraries/AP_RPM/RPM_DroneCAN.h \
+ ../../libraries/AP_DroneCAN/AP_DroneCAN.h \
+ ../../libraries/AP_DroneCAN/AP_Canard_iface.h \
+ ../../modules/DroneCAN/libcanard/canard/interface.h \
+ ../../modules/DroneCAN/libcanard/canard.h \
+ ../../modules/DroneCAN/libcanard/canard/handler_list.h \
+ ../../modules/DroneCAN/libcanard/canard/helpers.h \
+ ../../libraries/AP_DroneCAN/canard/canard_helpers_user.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/dronecan_msgs.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/ardupilot.equipment.power.BatteryCells.h \
+ ../../modules/DroneCAN/libcanard/canard/cxx_wrappers.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/ardupilot.equipment.power.BatteryContinuous.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/ardupilot.equipment.power.BatteryInfoAux.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.Timestamp.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/ardupilot.equipment.power.BatteryPeriodic.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/ardupilot.equipment.proximity_sensor.Proximity.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/ardupilot.equipment.trafficmonitor.TrafficReport.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/ardupilot.gnss.Heading.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/ardupilot.gnss.MovingBaselineData.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/ardupilot.gnss.RelPosHeading.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/ardupilot.gnss.Status.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/ardupilot.indication.Button.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/ardupilot.indication.NotifyState.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/ardupilot.indication.SafetyState.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/com.hex.equipment.flow.Measurement.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/com.himark.servo.ServoCmd.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/com.himark.servo.ServoInfo.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/com.hobbywing.esc.GetEscID.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/com.hobbywing.esc.GetMaintenanceInformation.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/com.hobbywing.esc.GetMaintenanceInformation_req.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/com.hobbywing.esc.GetMaintenanceInformation_res.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/com.hobbywing.esc.GetMajorConfig.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/com.hobbywing.esc.GetMajorConfig_req.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/com.hobbywing.esc.GetMajorConfig_res.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/com.hobbywing.esc.RawCommand.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/com.hobbywing.esc.SelfTest.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/com.hobbywing.esc.SelfTest_req.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/com.hobbywing.esc.SelfTest_res.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/com.hobbywing.esc.SetAngle.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/com.hobbywing.esc.SetAngle_req.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/com.hobbywing.esc.SetAngle_res.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/com.hobbywing.esc.SetBaud.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/com.hobbywing.esc.SetBaud_req.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/com.hobbywing.esc.SetBaud_res.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/com.hobbywing.esc.SetDirection.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/com.hobbywing.esc.SetDirection_req.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/com.hobbywing.esc.SetDirection_res.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/com.hobbywing.esc.SetID.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/com.hobbywing.esc.SetID_req.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/com.hobbywing.esc.SetID_res.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/com.hobbywing.esc.SetLED.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/com.hobbywing.esc.SetLED_req.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/com.hobbywing.esc.SetLED_res.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/com.hobbywing.esc.SetReportingFrequency.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/com.hobbywing.esc.SetReportingFrequency_req.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/com.hobbywing.esc.SetReportingFrequency_res.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/com.hobbywing.esc.SetThrottleSource.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/com.hobbywing.esc.SetThrottleSource_req.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/com.hobbywing.esc.SetThrottleSource_res.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/com.hobbywing.esc.StatusMsg1.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/com.hobbywing.esc.StatusMsg2.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/com.hobbywing.esc.StatusMsg3.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/com.tmotor.esc.FocCtrl.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/com.tmotor.esc.PUSHCAN.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/com.tmotor.esc.PUSHSCI.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/com.tmotor.esc.ParamCfg.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/com.tmotor.esc.ParamGet.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/com.volz.servo.ActuatorStatus.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/com.xacti.CopterAttStatus.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/com.xacti.GimbalAttitudeStatus.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/com.xacti.GimbalControlData.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/com.xacti.GnssStatus.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/com.xacti.GnssStatusReq.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/cuav.equipment.power.CBAT.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/dronecan.protocol.CanStats.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/dronecan.protocol.Stats.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/dronecan.remoteid.ArmStatus.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/dronecan.remoteid.BasicID.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/dronecan.remoteid.Location.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/dronecan.remoteid.OperatorID.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/dronecan.remoteid.SecureCommand.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/dronecan.remoteid.SecureCommand_req.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/dronecan.remoteid.SecureCommand_res.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/dronecan.remoteid.SelfID.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/dronecan.remoteid.System.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/dronecan.sensors.hygrometer.Hygrometer.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/dronecan.sensors.magnetometer.MagneticFieldStrengthHiRes.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/dronecan.sensors.rc.RCInput.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/dronecan.sensors.rpm.RPM.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/mppt.OutputEnable.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/mppt.OutputEnable_req.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/mppt.OutputEnable_res.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/mppt.Stream.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.CoarseOrientation.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.equipment.actuator.ArrayCommand.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.equipment.actuator.Command.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.equipment.actuator.Status.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.equipment.ahrs.MagneticFieldStrength.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.equipment.ahrs.MagneticFieldStrength2.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.equipment.ahrs.RawIMU.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.equipment.ahrs.Solution.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.equipment.air_data.AngleOfAttack.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.equipment.air_data.IndicatedAirspeed.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.equipment.air_data.RawAirData.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.equipment.air_data.Sideslip.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.equipment.air_data.StaticPressure.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.equipment.air_data.StaticTemperature.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.equipment.air_data.TrueAirspeed.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.equipment.camera_gimbal.AngularCommand.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.equipment.camera_gimbal.Mode.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.equipment.camera_gimbal.GEOPOICommand.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.equipment.camera_gimbal.Status.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.equipment.device.Temperature.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.equipment.esc.RPMCommand.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.equipment.esc.RawCommand.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.equipment.esc.Status.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.equipment.esc.StatusExtended.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.equipment.gnss.Auxiliary.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.equipment.gnss.ECEFPositionVelocity.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.equipment.gnss.Fix.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.equipment.gnss.Fix2.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.equipment.gnss.RTCMStream.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.equipment.hardpoint.Command.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.equipment.hardpoint.Status.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.equipment.ice.FuelTankStatus.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.equipment.ice.reciprocating.CylinderStatus.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.equipment.ice.reciprocating.Status.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.equipment.indication.BeepCommand.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.equipment.indication.LightsCommand.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.equipment.indication.SingleLightCommand.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.equipment.indication.RGB565.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.equipment.power.BatteryInfo.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.equipment.power.CircuitStatus.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.equipment.power.PrimaryPowerSupplyStatus.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.equipment.range_sensor.Measurement.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.equipment.safety.ArmingStatus.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.navigation.GlobalNavigationSolution.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.AccessCommandShell.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.AccessCommandShell_req.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.AccessCommandShell_res.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.CANIfaceStats.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.DataTypeKind.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.GetDataTypeInfo.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.GetDataTypeInfo_req.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.GetDataTypeInfo_res.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.GetNodeInfo.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.GetNodeInfo_req.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.GetNodeInfo_res.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.HardwareVersion.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.NodeStatus.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.SoftwareVersion.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.GetTransportStats.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.GetTransportStats_req.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.GetTransportStats_res.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.GlobalTimeSync.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.Panic.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.RestartNode.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.RestartNode_req.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.RestartNode_res.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.debug.KeyValue.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.debug.LogLevel.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.debug.LogMessage.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.dynamic_node_id.Allocation.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.dynamic_node_id.server.AppendEntries.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.dynamic_node_id.server.AppendEntries_req.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.dynamic_node_id.server.Entry.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.dynamic_node_id.server.AppendEntries_res.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.dynamic_node_id.server.Discovery.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.dynamic_node_id.server.RequestVote.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.dynamic_node_id.server.RequestVote_req.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.dynamic_node_id.server.RequestVote_res.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.enumeration.Begin.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.enumeration.Begin_req.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.enumeration.Begin_res.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.enumeration.Indication.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.param.NumericValue.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.param.Empty.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.file.BeginFirmwareUpdate.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.file.BeginFirmwareUpdate_req.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.file.Path.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.file.BeginFirmwareUpdate_res.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.file.Delete.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.file.Delete_req.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.file.Delete_res.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.file.Error.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.file.EntryType.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.file.GetDirectoryEntryInfo.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.file.GetDirectoryEntryInfo_req.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.file.GetDirectoryEntryInfo_res.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.file.GetInfo.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.file.GetInfo_req.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.file.GetInfo_res.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.file.Read.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.file.Read_req.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.file.Read_res.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.file.Write.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.file.Write_req.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.file.Write_res.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.param.ExecuteOpcode.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.param.ExecuteOpcode_req.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.param.ExecuteOpcode_res.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.param.GetSet.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.param.GetSet_req.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.param.Value.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.protocol.param.GetSet_res.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.tunnel.Broadcast.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.tunnel.Protocol.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.tunnel.Call.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.tunnel.Call_req.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.tunnel.Call_res.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.tunnel.SerialConfig.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.tunnel.Targetted.h \
+ ../../libraries/AP_ESC_Telem/AP_ESC_Telem_Backend.h \
+ ../../modules/DroneCAN/libcanard/canard/publisher.h \
+ ../../modules/DroneCAN/libcanard/canard/transfer_object.h \
+ ../../modules/DroneCAN/libcanard/canard/subscriber.h \
+ ../../modules/DroneCAN/libcanard/canard/callbacks.h \
+ ../../modules/DroneCAN/libcanard/canard/service_client.h \
+ ../../modules/DroneCAN/libcanard/canard/service_server.h \
+ ../../libraries/AP_HAL_ChibiOS/hwdef/common/stdio.h \
+ ../../libraries/AP_DroneCAN/AP_DroneCAN_DNA_Server.h \
+ ../../libraries/AP_Common/Bitmask.h \
+ ../../libraries/AP_InternalError/AP_InternalError.h \
+ ../../libraries/AP_InternalError/AP_InternalError_config.h \
+ ../../libraries/AP_DroneCAN/AP_DroneCAN_serial.h \
+ ../../libraries/AP_SerialManager/AP_SerialManager.h \
  ../../libraries/AP_Logger/AP_Logger.h \
  ../../libraries/AP_Mission/AP_Mission.h \
  ../../libraries/AP_Mission/AP_Mission_config.h \
@@ -492,10 +721,11 @@ libraries/AP_RPM/AP_RPM.cpp.0.o: ../../libraries/AP_RPM/AP_RPM.cpp \
  ../../libraries/AP_Landing/AP_Landing_config.h \
  ../../libraries/AP_BoardConfig/AP_BoardConfig.h \
  ../../libraries/AP_RTC/AP_RTC.h ../../libraries/AP_RTC/AP_RTC_config.h \
- ../../libraries/AC_PID/AC_PI.h ../../libraries/AP_Vehicle/ModeReason.h \
+ ../../libraries/AC_PID/AC_PI.h \
+ ../../libraries/AP_Radio/AP_Radio_config.h \
+ ../../libraries/AC_AttitudeControl/LogStructure.h \
+ ../../libraries/AP_HAL/LogStructure.h \
+ ../../libraries/AP_Vehicle/ModeReason.h \
  ../../libraries/AP_Logger/LoggerMessageWriter.h \
  ../../libraries/AP_Logger/AP_Logger_Backend.h \
- ../../libraries/AP_Common/Bitmask.h \
- ../../libraries/AP_InternalError/AP_InternalError.h \
- ../../libraries/AP_InternalError/AP_InternalError_config.h \
  ../../libraries/AP_Rally/AP_Rally.h

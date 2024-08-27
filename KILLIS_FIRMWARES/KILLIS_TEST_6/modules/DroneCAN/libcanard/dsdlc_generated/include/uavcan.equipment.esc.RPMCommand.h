@@ -40,14 +40,14 @@ void _uavcan_equipment_esc_RPMCommand_encode(uint8_t* buffer, uint32_t* bit_ofs,
     (void)msg;
     (void)tao;
 
-    if (!tao) {
-        canardEncodeScalar(buffer, *bit_ofs, 5, &msg->rpm.len);
-        *bit_ofs += 5;
-    }
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wtype-limits"
-    const size_t rpm_len = msg->rpm.len > 20 ? 20 : msg->rpm.len;
+    const uint8_t rpm_len = msg->rpm.len > 20 ? 20 : msg->rpm.len;
 #pragma GCC diagnostic pop
+    if (!tao) {
+        canardEncodeScalar(buffer, *bit_ofs, 5, &rpm_len);
+        *bit_ofs += 5;
+    }
     for (size_t i=0; i < rpm_len; i++) {
         canardEncodeScalar(buffer, *bit_ofs, 18, &msg->rpm.data[i]);
         *bit_ofs += 18;

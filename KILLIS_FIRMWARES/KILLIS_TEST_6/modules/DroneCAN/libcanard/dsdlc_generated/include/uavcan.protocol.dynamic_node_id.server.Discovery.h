@@ -45,14 +45,14 @@ void _uavcan_protocol_dynamic_node_id_server_Discovery_encode(uint8_t* buffer, u
 
     canardEncodeScalar(buffer, *bit_ofs, 8, &msg->configured_cluster_size);
     *bit_ofs += 8;
-    if (!tao) {
-        canardEncodeScalar(buffer, *bit_ofs, 3, &msg->known_nodes.len);
-        *bit_ofs += 3;
-    }
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wtype-limits"
-    const size_t known_nodes_len = msg->known_nodes.len > 5 ? 5 : msg->known_nodes.len;
+    const uint8_t known_nodes_len = msg->known_nodes.len > 5 ? 5 : msg->known_nodes.len;
 #pragma GCC diagnostic pop
+    if (!tao) {
+        canardEncodeScalar(buffer, *bit_ofs, 3, &known_nodes_len);
+        *bit_ofs += 3;
+    }
     for (size_t i=0; i < known_nodes_len; i++) {
         canardEncodeScalar(buffer, *bit_ofs, 8, &msg->known_nodes.data[i]);
         *bit_ofs += 8;

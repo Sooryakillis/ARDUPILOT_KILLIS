@@ -45,14 +45,14 @@ void _com_xacti_CopterAttStatus_encode(uint8_t* buffer, uint32_t* bit_ofs, struc
         canardEncodeScalar(buffer, *bit_ofs, 16, &msg->quaternion_wxyz_e4[i]);
         *bit_ofs += 16;
     }
-    if (!tao) {
-        canardEncodeScalar(buffer, *bit_ofs, 2, &msg->reserved.len);
-        *bit_ofs += 2;
-    }
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wtype-limits"
-    const size_t reserved_len = msg->reserved.len > 2 ? 2 : msg->reserved.len;
+    const uint8_t reserved_len = msg->reserved.len > 2 ? 2 : msg->reserved.len;
 #pragma GCC diagnostic pop
+    if (!tao) {
+        canardEncodeScalar(buffer, *bit_ofs, 2, &reserved_len);
+        *bit_ofs += 2;
+    }
     for (size_t i=0; i < reserved_len; i++) {
         {
             uint16_t float16_val = canardConvertNativeFloatToFloat16(msg->reserved.data[i]);

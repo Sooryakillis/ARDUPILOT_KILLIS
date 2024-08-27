@@ -22,11 +22,19 @@ libraries/AP_Filesystem/AP_Filesystem_ESP32.cpp.0.o: \
  ../../libraries/AP_HAL/HAL.h ../../libraries/AP_HAL/AnalogIn.h \
  ../../libraries/AP_HAL/GPIO.h ../../libraries/AP_HAL/RCInput.h \
  ../../libraries/AP_HAL/RCOutput.h ../../libraries/AP_HAL/SPIDevice.h \
- ../../libraries/AP_HAL/Device.h ../../libraries/AP_HAL/utility/OwnPtr.h \
+ ../../libraries/AP_HAL/Device.h \
+ ../../libraries/AP_Common/missing/utility \
+ ../../libraries/AP_HAL/utility/OwnPtr.h \
  ../../libraries/AP_Common/missing/cstddef \
  ../../libraries/AP_HAL/WSPIDevice.h ../../libraries/AP_HAL/Storage.h \
  ../../libraries/AP_HAL/UARTDriver.h \
  ../../libraries/AP_HAL/utility/BetterStream.h \
+ ../../libraries/AP_Logger/AP_Logger_config.h \
+ ../../libraries/GCS_MAVLink/GCS_config.h \
+ ../../libraries/AP_Relay/AP_Relay_config.h \
+ ../../libraries/AP_InertialSensor/AP_InertialSensor_config.h \
+ ../../libraries/AC_Fence/AC_Fence_config.h \
+ ../../libraries/AP_Rally/AP_Rally_config.h \
  ../../libraries/AP_HAL/system.h ../../libraries/AP_HAL/OpticalFlow.h \
  ../../libraries/AP_HAL/DSP.h ../../libraries/AP_HAL/utility/RingBuffer.h \
  ../../libraries/AP_HAL/CANIface.h ../../libraries/AP_HAL/Scheduler.h \

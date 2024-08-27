@@ -52,14 +52,14 @@ void _dronecan_sensors_rc_RCInput_encode(uint8_t* buffer, uint32_t* bit_ofs, str
     *bit_ofs += 8;
     canardEncodeScalar(buffer, *bit_ofs, 4, &msg->id);
     *bit_ofs += 4;
-    if (!tao) {
-        canardEncodeScalar(buffer, *bit_ofs, 6, &msg->rcin.len);
-        *bit_ofs += 6;
-    }
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wtype-limits"
-    const size_t rcin_len = msg->rcin.len > 32 ? 32 : msg->rcin.len;
+    const uint8_t rcin_len = msg->rcin.len > 32 ? 32 : msg->rcin.len;
 #pragma GCC diagnostic pop
+    if (!tao) {
+        canardEncodeScalar(buffer, *bit_ofs, 6, &rcin_len);
+        *bit_ofs += 6;
+    }
     for (size_t i=0; i < rcin_len; i++) {
         canardEncodeScalar(buffer, *bit_ofs, 12, &msg->rcin.data[i]);
         *bit_ofs += 12;

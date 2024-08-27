@@ -48,14 +48,14 @@ void _uavcan_protocol_file_BeginFirmwareUpdateResponse_encode(uint8_t* buffer, u
 
     canardEncodeScalar(buffer, *bit_ofs, 8, &msg->error);
     *bit_ofs += 8;
-    if (!tao) {
-        canardEncodeScalar(buffer, *bit_ofs, 7, &msg->optional_error_message.len);
-        *bit_ofs += 7;
-    }
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wtype-limits"
-    const size_t optional_error_message_len = msg->optional_error_message.len > 127 ? 127 : msg->optional_error_message.len;
+    const uint8_t optional_error_message_len = msg->optional_error_message.len > 127 ? 127 : msg->optional_error_message.len;
 #pragma GCC diagnostic pop
+    if (!tao) {
+        canardEncodeScalar(buffer, *bit_ofs, 7, &optional_error_message_len);
+        *bit_ofs += 7;
+    }
     for (size_t i=0; i < optional_error_message_len; i++) {
         canardEncodeScalar(buffer, *bit_ofs, 8, &msg->optional_error_message.data[i]);
         *bit_ofs += 8;

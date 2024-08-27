@@ -40,14 +40,14 @@ void _com_hobbywing_esc_GetEscID_encode(uint8_t* buffer, uint32_t* bit_ofs, stru
     (void)msg;
     (void)tao;
 
-    if (!tao) {
-        canardEncodeScalar(buffer, *bit_ofs, 2, &msg->payload.len);
-        *bit_ofs += 2;
-    }
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wtype-limits"
-    const size_t payload_len = msg->payload.len > 3 ? 3 : msg->payload.len;
+    const uint8_t payload_len = msg->payload.len > 3 ? 3 : msg->payload.len;
 #pragma GCC diagnostic pop
+    if (!tao) {
+        canardEncodeScalar(buffer, *bit_ofs, 2, &payload_len);
+        *bit_ofs += 2;
+    }
     for (size_t i=0; i < payload_len; i++) {
         canardEncodeScalar(buffer, *bit_ofs, 8, &msg->payload.data[i]);
         *bit_ofs += 8;

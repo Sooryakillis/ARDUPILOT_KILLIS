@@ -56,14 +56,14 @@ void _uavcan_protocol_dynamic_node_id_server_AppendEntriesRequest_encode(uint8_t
     *bit_ofs += 8;
     canardEncodeScalar(buffer, *bit_ofs, 8, &msg->leader_commit);
     *bit_ofs += 8;
-    if (!tao) {
-        canardEncodeScalar(buffer, *bit_ofs, 1, &msg->entries.len);
-        *bit_ofs += 1;
-    }
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wtype-limits"
-    const size_t entries_len = msg->entries.len > 1 ? 1 : msg->entries.len;
+    const uint8_t entries_len = msg->entries.len > 1 ? 1 : msg->entries.len;
 #pragma GCC diagnostic pop
+    if (!tao) {
+        canardEncodeScalar(buffer, *bit_ofs, 1, &entries_len);
+        *bit_ofs += 1;
+    }
     for (size_t i=0; i < entries_len; i++) {
         _uavcan_protocol_dynamic_node_id_server_Entry_encode(buffer, bit_ofs, &msg->entries.data[i], false);
     }
@@ -97,8 +97,10 @@ bool _uavcan_protocol_dynamic_node_id_server_AppendEntriesRequest_decode(const C
 
     if (tao) {
         msg->entries.len = 0;
-        while ((transfer->payload_len*8) > *bit_ofs) {
-            if (_uavcan_protocol_dynamic_node_id_server_Entry_decode(transfer, bit_ofs, &msg->entries.data[msg->entries.len], false)) {return true;}
+        size_t max_len = 1;
+        uint32_t max_bits = (transfer->payload_len*8)-7; // TAO elements must be >= 8 bits
+        while (max_bits > *bit_ofs) {
+            if (!max_len-- || _uavcan_protocol_dynamic_node_id_server_Entry_decode(transfer, bit_ofs, &msg->entries.data[msg->entries.len], false)) {return true;}
             msg->entries.len++;
         }
     } else {

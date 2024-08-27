@@ -74,14 +74,14 @@ void _uavcan_protocol_param_Value_encode(uint8_t* buffer, uint32_t* bit_ofs, str
             break;
         }
         case UAVCAN_PROTOCOL_PARAM_VALUE_STRING_VALUE: {
-            if (!tao) {
-                canardEncodeScalar(buffer, *bit_ofs, 8, &msg->string_value.len);
-                *bit_ofs += 8;
-            }
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wtype-limits"
-            const size_t string_value_len = msg->string_value.len > 128 ? 128 : msg->string_value.len;
+            const uint8_t string_value_len = msg->string_value.len > 128 ? 128 : msg->string_value.len;
 #pragma GCC diagnostic pop
+            if (!tao) {
+                canardEncodeScalar(buffer, *bit_ofs, 8, &string_value_len);
+                *bit_ofs += 8;
+            }
             for (size_t i=0; i < string_value_len; i++) {
                 canardEncodeScalar(buffer, *bit_ofs, 8, &msg->string_value.data[i]);
                 *bit_ofs += 8;
@@ -101,8 +101,14 @@ bool _uavcan_protocol_param_Value_decode(const CanardRxTransfer* transfer, uint3
     (void)tao;
     uint8_t union_tag;
     canardDecodeScalar(transfer, *bit_ofs, 3, false, &union_tag);
-    msg->union_tag = (enum uavcan_protocol_param_Value_type_t)union_tag;
     *bit_ofs += 3;
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wtype-limits"
+    if (union_tag >= 5) {
+        return true; /* invalid value */
+    }
+#pragma GCC diagnostic pop
+    msg->union_tag = (enum uavcan_protocol_param_Value_type_t)union_tag;
 
     switch(msg->union_tag) {
         case UAVCAN_PROTOCOL_PARAM_VALUE_EMPTY: {

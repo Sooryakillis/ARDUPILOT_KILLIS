@@ -27,7 +27,9 @@ libraries/AP_AccelCal/AP_AccelCal.cpp.0.o: \
  ../../libraries/AP_HAL/HAL.h ../../libraries/AP_HAL/AnalogIn.h \
  ../../libraries/AP_HAL/GPIO.h ../../libraries/AP_HAL/RCInput.h \
  ../../libraries/AP_HAL/RCOutput.h ../../libraries/AP_HAL/SPIDevice.h \
- ../../libraries/AP_HAL/Device.h ../../libraries/AP_HAL/utility/OwnPtr.h \
+ ../../libraries/AP_HAL/Device.h \
+ ../../libraries/AP_Common/missing/utility \
+ ../../libraries/AP_HAL/utility/OwnPtr.h \
  ../../libraries/AP_Common/missing/cstddef \
  ../../libraries/AP_HAL/WSPIDevice.h ../../libraries/AP_HAL/Storage.h \
  ../../libraries/AP_HAL/UARTDriver.h \
@@ -362,6 +364,7 @@ libraries/AP_AccelCal/AP_AccelCal.cpp.0.o: \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../development/development.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../development/./mavlink_msg_mission_checksum.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../development/./mavlink_msg_airspeed.h \
+ libraries/GCS_MAVLink/include/mavlink/v2.0/all/../development/./mavlink_msg_radio_rc_channels.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../development/../standard/standard.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../python_array_test/python_array_test.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../python_array_test/./mavlink_msg_array_test_0.h \
@@ -437,5 +440,6 @@ libraries/AP_AccelCal/AP_AccelCal.cpp.0.o: \
  ../../libraries/AP_RangeFinder/AP_RangeFinder_config.h \
  ../../libraries/AP_CANManager/AP_CANManager_config.h \
  ../../libraries/AP_Winch/AP_Winch_config.h \
+ ../../libraries/AP_AHRS/AP_AHRS_config.h \
  ../../libraries/AP_Arming/AP_Arming_config.h \
  ../../libraries/GCS_MAVLink/ap_message.h

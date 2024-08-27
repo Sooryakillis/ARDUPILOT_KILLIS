@@ -54,14 +54,14 @@ void _uavcan_protocol_dynamic_node_id_Allocation_encode(uint8_t* buffer, uint32_
     *bit_ofs += 7;
     canardEncodeScalar(buffer, *bit_ofs, 1, &msg->first_part_of_unique_id);
     *bit_ofs += 1;
-    if (!tao) {
-        canardEncodeScalar(buffer, *bit_ofs, 5, &msg->unique_id.len);
-        *bit_ofs += 5;
-    }
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wtype-limits"
-    const size_t unique_id_len = msg->unique_id.len > 16 ? 16 : msg->unique_id.len;
+    const uint8_t unique_id_len = msg->unique_id.len > 16 ? 16 : msg->unique_id.len;
 #pragma GCC diagnostic pop
+    if (!tao) {
+        canardEncodeScalar(buffer, *bit_ofs, 5, &unique_id_len);
+        *bit_ofs += 5;
+    }
     for (size_t i=0; i < unique_id_len; i++) {
         canardEncodeScalar(buffer, *bit_ofs, 8, &msg->unique_id.data[i]);
         *bit_ofs += 8;

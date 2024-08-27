@@ -44,14 +44,14 @@ void _uavcan_protocol_HardwareVersion_encode(uint8_t* buffer, uint32_t* bit_ofs,
         canardEncodeScalar(buffer, *bit_ofs, 8, &msg->unique_id[i]);
         *bit_ofs += 8;
     }
-    if (!tao) {
-        canardEncodeScalar(buffer, *bit_ofs, 8, &msg->certificate_of_authenticity.len);
-        *bit_ofs += 8;
-    }
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wtype-limits"
-    const size_t certificate_of_authenticity_len = msg->certificate_of_authenticity.len > 255 ? 255 : msg->certificate_of_authenticity.len;
+    const uint8_t certificate_of_authenticity_len = msg->certificate_of_authenticity.len > 255 ? 255 : msg->certificate_of_authenticity.len;
 #pragma GCC diagnostic pop
+    if (!tao) {
+        canardEncodeScalar(buffer, *bit_ofs, 8, &certificate_of_authenticity_len);
+        *bit_ofs += 8;
+    }
     for (size_t i=0; i < certificate_of_authenticity_len; i++) {
         canardEncodeScalar(buffer, *bit_ofs, 8, &msg->certificate_of_authenticity.data[i]);
         *bit_ofs += 8;

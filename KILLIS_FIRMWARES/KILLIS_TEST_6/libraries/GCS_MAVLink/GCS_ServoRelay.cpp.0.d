@@ -15,12 +15,19 @@ libraries/GCS_MAVLink/GCS_ServoRelay.cpp.0.o: \
  ../../libraries/AP_HAL_ChibiOS/AP_HAL_ChibiOS_Namespace.h \
  ../../libraries/AP_Relay/AP_Relay_config.h \
  ../../libraries/AP_Mission/AP_Mission_config.h \
+ ../../libraries/AP_InertialSensor/AP_InertialSensor_config.h \
+ ../../libraries/AP_Logger/AP_Logger_config.h \
+ ../../libraries/AP_Filesystem/AP_Filesystem_config.h \
+ ../../libraries/AC_Fence/AC_Fence_config.h \
+ ../../libraries/AP_Rally/AP_Rally_config.h \
  ../../libraries/AP_AdvancedFailsafe/AP_AdvancedFailsafe_config.h \
  ../../libraries/AP_HAL/AP_HAL.h ../../libraries/AP_HAL/AP_HAL_Main.h \
  ../../libraries/AP_HAL/HAL.h ../../libraries/AP_HAL/AnalogIn.h \
  ../../libraries/AP_HAL/GPIO.h ../../libraries/AP_HAL/RCInput.h \
  ../../libraries/AP_HAL/RCOutput.h ../../libraries/AP_HAL/SPIDevice.h \
- ../../libraries/AP_HAL/Device.h ../../libraries/AP_HAL/utility/OwnPtr.h \
+ ../../libraries/AP_HAL/Device.h \
+ ../../libraries/AP_Common/missing/utility \
+ ../../libraries/AP_HAL/utility/OwnPtr.h \
  ../../libraries/AP_Common/missing/cstddef \
  ../../libraries/AP_HAL/WSPIDevice.h ../../libraries/AP_HAL/Storage.h \
  ../../libraries/AP_HAL/UARTDriver.h \
@@ -32,11 +39,6 @@ libraries/GCS_MAVLink/GCS_ServoRelay.cpp.0.o: \
  ../../libraries/GCS_MAVLink/GCS_MAVLink.h \
  ../../libraries/AP_Networking/AP_Networking_Config.h \
  ../../libraries/AP_SerialManager/AP_SerialManager_config.h \
- ../../libraries/AP_InertialSensor/AP_InertialSensor_config.h \
- ../../libraries/AP_Logger/AP_Logger_config.h \
- ../../libraries/AP_Filesystem/AP_Filesystem_config.h \
- ../../libraries/AC_Fence/AC_Fence_config.h \
- ../../libraries/AP_Rally/AP_Rally_config.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/version.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/mavlink_types.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/mavlink.h \
@@ -363,6 +365,7 @@ libraries/GCS_MAVLink/GCS_ServoRelay.cpp.0.o: \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../development/development.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../development/./mavlink_msg_mission_checksum.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../development/./mavlink_msg_airspeed.h \
+ libraries/GCS_MAVLink/include/mavlink/v2.0/all/../development/./mavlink_msg_radio_rc_channels.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../development/../standard/standard.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../python_array_test/python_array_test.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../python_array_test/./mavlink_msg_array_test_0.h \
@@ -434,6 +437,7 @@ libraries/GCS_MAVLink/GCS_ServoRelay.cpp.0.o: \
  ../../libraries/AP_RangeFinder/AP_RangeFinder_config.h \
  ../../libraries/AP_CANManager/AP_CANManager_config.h \
  ../../libraries/AP_Winch/AP_Winch_config.h \
+ ../../libraries/AP_AHRS/AP_AHRS_config.h \
  ../../libraries/AP_Arming/AP_Arming_config.h \
  ../../libraries/GCS_MAVLink/ap_message.h \
  ../../libraries/AP_ServoRelayEvents/AP_ServoRelayEvents.h \
@@ -501,6 +505,11 @@ libraries/GCS_MAVLink/GCS_ServoRelay.cpp.0.o: \
  modules/DroneCAN/libcanard/dsdlc_generated/include/com.hobbywing.esc.StatusMsg1.h \
  modules/DroneCAN/libcanard/dsdlc_generated/include/com.hobbywing.esc.StatusMsg2.h \
  modules/DroneCAN/libcanard/dsdlc_generated/include/com.hobbywing.esc.StatusMsg3.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/com.tmotor.esc.FocCtrl.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/com.tmotor.esc.PUSHCAN.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/com.tmotor.esc.PUSHSCI.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/com.tmotor.esc.ParamCfg.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/com.tmotor.esc.ParamGet.h \
  modules/DroneCAN/libcanard/dsdlc_generated/include/com.volz.servo.ActuatorStatus.h \
  modules/DroneCAN/libcanard/dsdlc_generated/include/com.xacti.CopterAttStatus.h \
  modules/DroneCAN/libcanard/dsdlc_generated/include/com.xacti.GimbalAttitudeStatus.h \
@@ -520,7 +529,9 @@ libraries/GCS_MAVLink/GCS_ServoRelay.cpp.0.o: \
  modules/DroneCAN/libcanard/dsdlc_generated/include/dronecan.remoteid.SelfID.h \
  modules/DroneCAN/libcanard/dsdlc_generated/include/dronecan.remoteid.System.h \
  modules/DroneCAN/libcanard/dsdlc_generated/include/dronecan.sensors.hygrometer.Hygrometer.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/dronecan.sensors.magnetometer.MagneticFieldStrengthHiRes.h \
  modules/DroneCAN/libcanard/dsdlc_generated/include/dronecan.sensors.rc.RCInput.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/dronecan.sensors.rpm.RPM.h \
  modules/DroneCAN/libcanard/dsdlc_generated/include/mppt.OutputEnable.h \
  modules/DroneCAN/libcanard/dsdlc_generated/include/mppt.OutputEnable_req.h \
  modules/DroneCAN/libcanard/dsdlc_generated/include/mppt.OutputEnable_res.h \
@@ -548,6 +559,7 @@ libraries/GCS_MAVLink/GCS_ServoRelay.cpp.0.o: \
  modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.equipment.esc.RPMCommand.h \
  modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.equipment.esc.RawCommand.h \
  modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.equipment.esc.Status.h \
+ modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.equipment.esc.StatusExtended.h \
  modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.equipment.gnss.Auxiliary.h \
  modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.equipment.gnss.ECEFPositionVelocity.h \
  modules/DroneCAN/libcanard/dsdlc_generated/include/uavcan.equipment.gnss.Fix.h \

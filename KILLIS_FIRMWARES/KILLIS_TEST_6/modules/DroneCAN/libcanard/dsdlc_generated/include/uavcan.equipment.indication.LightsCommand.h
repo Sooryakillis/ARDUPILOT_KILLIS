@@ -41,14 +41,14 @@ void _uavcan_equipment_indication_LightsCommand_encode(uint8_t* buffer, uint32_t
     (void)msg;
     (void)tao;
 
-    if (!tao) {
-        canardEncodeScalar(buffer, *bit_ofs, 5, &msg->commands.len);
-        *bit_ofs += 5;
-    }
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wtype-limits"
-    const size_t commands_len = msg->commands.len > 20 ? 20 : msg->commands.len;
+    const uint8_t commands_len = msg->commands.len > 20 ? 20 : msg->commands.len;
 #pragma GCC diagnostic pop
+    if (!tao) {
+        canardEncodeScalar(buffer, *bit_ofs, 5, &commands_len);
+        *bit_ofs += 5;
+    }
     for (size_t i=0; i < commands_len; i++) {
         _uavcan_equipment_indication_SingleLightCommand_encode(buffer, bit_ofs, &msg->commands.data[i], false);
     }
@@ -70,8 +70,10 @@ bool _uavcan_equipment_indication_LightsCommand_decode(const CanardRxTransfer* t
 
     if (tao) {
         msg->commands.len = 0;
-        while ((transfer->payload_len*8) > *bit_ofs) {
-            if (_uavcan_equipment_indication_SingleLightCommand_decode(transfer, bit_ofs, &msg->commands.data[msg->commands.len], false)) {return true;}
+        size_t max_len = 20;
+        uint32_t max_bits = (transfer->payload_len*8)-7; // TAO elements must be >= 8 bits
+        while (max_bits > *bit_ofs) {
+            if (!max_len-- || _uavcan_equipment_indication_SingleLightCommand_decode(transfer, bit_ofs, &msg->commands.data[msg->commands.len], false)) {return true;}
             msg->commands.len++;
         }
     } else {

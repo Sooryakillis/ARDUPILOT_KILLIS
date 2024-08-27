@@ -51,14 +51,14 @@ void _uavcan_protocol_AccessCommandShellResponse_encode(uint8_t* buffer, uint32_
     *bit_ofs += 32;
     canardEncodeScalar(buffer, *bit_ofs, 8, &msg->flags);
     *bit_ofs += 8;
-    if (!tao) {
-        canardEncodeScalar(buffer, *bit_ofs, 9, &msg->output.len);
-        *bit_ofs += 9;
-    }
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wtype-limits"
-    const size_t output_len = msg->output.len > 256 ? 256 : msg->output.len;
+    const uint16_t output_len = msg->output.len > 256 ? 256 : msg->output.len;
 #pragma GCC diagnostic pop
+    if (!tao) {
+        canardEncodeScalar(buffer, *bit_ofs, 9, &output_len);
+        *bit_ofs += 9;
+    }
     for (size_t i=0; i < output_len; i++) {
         canardEncodeScalar(buffer, *bit_ofs, 8, &msg->output.data[i]);
         *bit_ofs += 8;

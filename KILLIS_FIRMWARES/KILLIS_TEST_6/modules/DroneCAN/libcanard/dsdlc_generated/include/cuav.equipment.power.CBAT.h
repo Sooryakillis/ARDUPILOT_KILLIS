@@ -80,12 +80,12 @@ void _cuav_equipment_power_CBAT_encode(uint8_t* buffer, uint32_t* bit_ofs, struc
     *bit_ofs += 32;
     canardEncodeScalar(buffer, *bit_ofs, 32, &msg->voltage);
     *bit_ofs += 32;
-    canardEncodeScalar(buffer, *bit_ofs, 4, &msg->voltage_cell.len);
-    *bit_ofs += 4;
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wtype-limits"
-    const size_t voltage_cell_len = msg->voltage_cell.len > 15 ? 15 : msg->voltage_cell.len;
+    const uint8_t voltage_cell_len = msg->voltage_cell.len > 15 ? 15 : msg->voltage_cell.len;
 #pragma GCC diagnostic pop
+    canardEncodeScalar(buffer, *bit_ofs, 4, &voltage_cell_len);
+    *bit_ofs += 4;
     for (size_t i=0; i < voltage_cell_len; i++) {
         canardEncodeScalar(buffer, *bit_ofs, 32, &msg->voltage_cell.data[i]);
         *bit_ofs += 32;

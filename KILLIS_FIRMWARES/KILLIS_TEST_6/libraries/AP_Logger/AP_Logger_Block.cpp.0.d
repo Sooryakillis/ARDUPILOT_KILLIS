@@ -16,5 +16,6 @@ libraries/AP_Logger/AP_Logger_Block.cpp.0.o: \
  ../../libraries/AP_Mission/AP_Mission_config.h \
  ../../libraries/GCS_MAVLink/GCS_config.h \
  ../../libraries/AP_Relay/AP_Relay_config.h \
+ ../../libraries/AP_InertialSensor/AP_InertialSensor_config.h \
  ../../libraries/AC_Fence/AC_Fence_config.h \
  ../../libraries/AP_Rally/AP_Rally_config.h

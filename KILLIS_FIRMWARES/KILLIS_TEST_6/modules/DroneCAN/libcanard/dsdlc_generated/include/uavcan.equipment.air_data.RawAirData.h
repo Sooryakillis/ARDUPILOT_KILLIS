@@ -78,14 +78,14 @@ void _uavcan_equipment_air_data_RawAirData_encode(uint8_t* buffer, uint32_t* bit
         canardEncodeScalar(buffer, *bit_ofs, 16, &float16_val);
     }
     *bit_ofs += 16;
-    if (!tao) {
-        canardEncodeScalar(buffer, *bit_ofs, 5, &msg->covariance.len);
-        *bit_ofs += 5;
-    }
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wtype-limits"
-    const size_t covariance_len = msg->covariance.len > 16 ? 16 : msg->covariance.len;
+    const uint8_t covariance_len = msg->covariance.len > 16 ? 16 : msg->covariance.len;
 #pragma GCC diagnostic pop
+    if (!tao) {
+        canardEncodeScalar(buffer, *bit_ofs, 5, &covariance_len);
+        *bit_ofs += 5;
+    }
     for (size_t i=0; i < covariance_len; i++) {
         {
             uint16_t float16_val = canardConvertNativeFloatToFloat16(msg->covariance.data[i]);

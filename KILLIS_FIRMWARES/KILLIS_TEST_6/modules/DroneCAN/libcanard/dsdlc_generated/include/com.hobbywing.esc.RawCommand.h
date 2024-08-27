@@ -40,14 +40,14 @@ void _com_hobbywing_esc_RawCommand_encode(uint8_t* buffer, uint32_t* bit_ofs, st
     (void)msg;
     (void)tao;
 
-    if (!tao) {
-        canardEncodeScalar(buffer, *bit_ofs, 4, &msg->command.len);
-        *bit_ofs += 4;
-    }
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wtype-limits"
-    const size_t command_len = msg->command.len > 8 ? 8 : msg->command.len;
+    const uint8_t command_len = msg->command.len > 8 ? 8 : msg->command.len;
 #pragma GCC diagnostic pop
+    if (!tao) {
+        canardEncodeScalar(buffer, *bit_ofs, 4, &command_len);
+        *bit_ofs += 4;
+    }
     for (size_t i=0; i < command_len; i++) {
         canardEncodeScalar(buffer, *bit_ofs, 14, &msg->command.data[i]);
         *bit_ofs += 14;

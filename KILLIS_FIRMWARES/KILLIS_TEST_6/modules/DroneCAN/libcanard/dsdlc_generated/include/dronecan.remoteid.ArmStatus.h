@@ -46,14 +46,14 @@ void _dronecan_remoteid_ArmStatus_encode(uint8_t* buffer, uint32_t* bit_ofs, str
 
     canardEncodeScalar(buffer, *bit_ofs, 8, &msg->status);
     *bit_ofs += 8;
-    if (!tao) {
-        canardEncodeScalar(buffer, *bit_ofs, 6, &msg->error.len);
-        *bit_ofs += 6;
-    }
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wtype-limits"
-    const size_t error_len = msg->error.len > 50 ? 50 : msg->error.len;
+    const uint8_t error_len = msg->error.len > 50 ? 50 : msg->error.len;
 #pragma GCC diagnostic pop
+    if (!tao) {
+        canardEncodeScalar(buffer, *bit_ofs, 6, &error_len);
+        *bit_ofs += 6;
+    }
     for (size_t i=0; i < error_len; i++) {
         canardEncodeScalar(buffer, *bit_ofs, 8, &msg->error.data[i]);
         *bit_ofs += 8;

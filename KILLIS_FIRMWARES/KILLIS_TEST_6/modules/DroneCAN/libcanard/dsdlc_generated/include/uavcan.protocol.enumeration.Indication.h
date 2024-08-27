@@ -44,14 +44,14 @@ void _uavcan_protocol_enumeration_Indication_encode(uint8_t* buffer, uint32_t* b
 
     *bit_ofs += 6;
     _uavcan_protocol_param_NumericValue_encode(buffer, bit_ofs, &msg->value, false);
-    if (!tao) {
-        canardEncodeScalar(buffer, *bit_ofs, 7, &msg->parameter_name.len);
-        *bit_ofs += 7;
-    }
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wtype-limits"
-    const size_t parameter_name_len = msg->parameter_name.len > 92 ? 92 : msg->parameter_name.len;
+    const uint8_t parameter_name_len = msg->parameter_name.len > 92 ? 92 : msg->parameter_name.len;
 #pragma GCC diagnostic pop
+    if (!tao) {
+        canardEncodeScalar(buffer, *bit_ofs, 7, &parameter_name_len);
+        *bit_ofs += 7;
+    }
     for (size_t i=0; i < parameter_name_len; i++) {
         canardEncodeScalar(buffer, *bit_ofs, 8, &msg->parameter_name.data[i]);
         *bit_ofs += 8;

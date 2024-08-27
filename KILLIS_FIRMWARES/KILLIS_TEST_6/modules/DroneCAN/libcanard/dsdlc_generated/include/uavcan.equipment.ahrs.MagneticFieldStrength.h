@@ -48,14 +48,14 @@ void _uavcan_equipment_ahrs_MagneticFieldStrength_encode(uint8_t* buffer, uint32
         }
         *bit_ofs += 16;
     }
-    if (!tao) {
-        canardEncodeScalar(buffer, *bit_ofs, 4, &msg->magnetic_field_covariance.len);
-        *bit_ofs += 4;
-    }
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wtype-limits"
-    const size_t magnetic_field_covariance_len = msg->magnetic_field_covariance.len > 9 ? 9 : msg->magnetic_field_covariance.len;
+    const uint8_t magnetic_field_covariance_len = msg->magnetic_field_covariance.len > 9 ? 9 : msg->magnetic_field_covariance.len;
 #pragma GCC diagnostic pop
+    if (!tao) {
+        canardEncodeScalar(buffer, *bit_ofs, 4, &magnetic_field_covariance_len);
+        *bit_ofs += 4;
+    }
     for (size_t i=0; i < magnetic_field_covariance_len; i++) {
         {
             uint16_t float16_val = canardConvertNativeFloatToFloat16(msg->magnetic_field_covariance.data[i]);
