@@ -380,6 +380,7 @@ libraries/Filter/NotchFilter.cpp.0.o: \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../development/./mavlink_msg_mission_checksum.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../development/./mavlink_msg_airspeed.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../development/./mavlink_msg_radio_rc_channels.h \
+ libraries/GCS_MAVLink/include/mavlink/v2.0/all/../development/./mavlink_msg_gnss_integrity.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../development/../standard/standard.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../python_array_test/python_array_test.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../python_array_test/./mavlink_msg_array_test_0.h \

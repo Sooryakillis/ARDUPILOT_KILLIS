@@ -385,6 +385,7 @@ libraries/AP_GPS/AP_GPS.cpp.0.o: ../../libraries/AP_GPS/AP_GPS.cpp \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../development/./mavlink_msg_mission_checksum.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../development/./mavlink_msg_airspeed.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../development/./mavlink_msg_radio_rc_channels.h \
+ libraries/GCS_MAVLink/include/mavlink/v2.0/all/../development/./mavlink_msg_gnss_integrity.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../development/../standard/standard.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../python_array_test/python_array_test.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../python_array_test/./mavlink_msg_array_test_0.h \
@@ -450,8 +451,10 @@ libraries/AP_GPS/AP_GPS.cpp.0.o: ../../libraries/AP_GPS/AP_GPS.cpp \
  ../../libraries/AC_PID/AC_PI.h \
  ../../libraries/AP_Radio/AP_Radio_config.h \
  ../../libraries/AP_GPS/AP_GPS_NOVA.h \
- ../../libraries/AP_GPS/GPS_Backend.h ../../libraries/AP_GPS/AP_GPS_ERB.h \
- ../../libraries/AP_GPS/AP_GPS_GSOF.h ../../libraries/AP_GSOF/AP_GSOF.h \
+ ../../libraries/AP_GPS/GPS_Backend.h \
+ ../../libraries/AP_GPS/AP_GPS_Blended.h \
+ ../../libraries/AP_GPS/AP_GPS_ERB.h ../../libraries/AP_GPS/AP_GPS_GSOF.h \
+ ../../libraries/AP_GSOF/AP_GSOF.h \
  ../../libraries/AP_GSOF/AP_GSOF_config.h \
  ../../libraries/AP_GPS/AP_GPS_NMEA.h ../../libraries/AP_GPS/AP_GPS_SBF.h \
  ../../libraries/AP_GPS/AP_GPS_SBP.h ../../libraries/AP_GPS/AP_GPS_SBP2.h \

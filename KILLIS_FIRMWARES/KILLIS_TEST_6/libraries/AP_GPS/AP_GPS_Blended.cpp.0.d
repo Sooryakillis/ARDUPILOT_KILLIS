@@ -1,6 +1,6 @@
 libraries/AP_GPS/AP_GPS_Blended.cpp.0.o: \
  ../../libraries/AP_GPS/AP_GPS_Blended.cpp ap_config.h \
- ../../libraries/AP_GPS/AP_GPS.h ../../libraries/AP_GPS/AP_GPS_config.h \
+ ../../libraries/AP_GPS/AP_GPS_config.h \
  ../../libraries/AP_HAL/AP_HAL_Boards.h \
  ../../libraries/AP_HAL/board/chibios.h hwdef.h \
  ../../libraries/AP_HAL_ChibiOS/Semaphores.h \
@@ -20,6 +20,7 @@ libraries/AP_GPS/AP_GPS_Blended.cpp.0.o: \
  ../../libraries/AP_Filesystem/AP_Filesystem_config.h \
  ../../libraries/AC_Fence/AC_Fence_config.h \
  ../../libraries/AP_Rally/AP_Rally_config.h \
+ ../../libraries/AP_GPS/AP_GPS_Blended.h ../../libraries/AP_GPS/AP_GPS.h \
  ../../libraries/AP_HAL/AP_HAL.h ../../libraries/AP_HAL/AP_HAL_Main.h \
  ../../libraries/AP_HAL/HAL.h ../../libraries/AP_HAL/AnalogIn.h \
  ../../libraries/AP_HAL/GPIO.h ../../libraries/AP_HAL/RCInput.h \
@@ -386,6 +387,7 @@ libraries/AP_GPS/AP_GPS_Blended.cpp.0.o: \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../development/./mavlink_msg_mission_checksum.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../development/./mavlink_msg_airspeed.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../development/./mavlink_msg_radio_rc_channels.h \
+ libraries/GCS_MAVLink/include/mavlink/v2.0/all/../development/./mavlink_msg_gnss_integrity.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../development/../standard/standard.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../python_array_test/python_array_test.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../python_array_test/./mavlink_msg_array_test_0.h \
@@ -419,4 +421,5 @@ libraries/AP_GPS/AP_GPS_Blended.cpp.0.o: \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../AVSSUAS/./mavlink_msg_avss_drone_imu.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../AVSSUAS/./mavlink_msg_avss_drone_operation_mode.h \
  libraries/GCS_MAVLink/include/mavlink/v2.0/all/../mavlink_get_info.h \
- ../../libraries/AP_GPS/MovingBase.h
+ ../../libraries/AP_GPS/MovingBase.h ../../libraries/AP_GPS/GPS_Backend.h \
+ ../../libraries/AP_RTC/JitterCorrection.h
