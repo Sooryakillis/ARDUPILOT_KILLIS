@@ -72,6 +72,8 @@
 #define HAL_I2C_INTERNAL_MASK 0
 #define HAL_COMPASS_AUTO_ROT_DEFAULT 2
 #define HAL_DEFAULT_INS_FAST_SAMPLE 1
+#define HAL_STORAGE_SIZE 32768
+#define HAL_WITH_RAMTRON 1
 #define HAL_OS_FATFS_IO 1
 #define OSD_ENABLED 1
 #define HAL_OSD_TYPE_DEFAULT 1
@@ -136,13 +138,13 @@
 #define HAL_SPI_DEVICE0  SPIDesc("bmi088_g"       ,  0,  1, PAL_LINE(GPIOD,7U) , SPIDEV_MODE3,  10*MHZ,  10*MHZ)
 #define HAL_SPI_DEVICE1  SPIDesc("bmi088_a"       ,  0,  2, PAL_LINE(GPIOD,4U) , SPIDEV_MODE3,  10*MHZ,  10*MHZ)
 #define HAL_SPI_DEVICE2  SPIDesc("icm42688"       ,  0,  3, PAL_LINE(GPIOE,0U) , SPIDEV_MODE3,   2*MHZ,   8*MHZ)
-#define HAL_SPI_DEVICE3  SPIDesc("icm20602"       ,  1,  1, PAL_LINE(GPIOE,11U), SPIDEV_MODE3,   1*MHZ,   4*MHZ)
+#define HAL_SPI_DEVICE3  SPIDesc("ramtron"        ,  1,  1, PAL_LINE(GPIOB,2U) , SPIDEV_MODE3,   8*MHZ,   8*MHZ)
 #define HAL_SPI_DEVICE_LIST HAL_SPI_DEVICE0,HAL_SPI_DEVICE1,HAL_SPI_DEVICE2,HAL_SPI_DEVICE3
 
 #define HAL_WITH_SPI_BMI088_G 1
 #define HAL_WITH_SPI_BMI088_A 1
 #define HAL_WITH_SPI_ICM42688 1
-#define HAL_WITH_SPI_ICM20602 1
+#define HAL_WITH_SPI_RAMTRON 1
 
 // ADC config
 #define HAL_ANALOG_PINS \
@@ -203,6 +205,7 @@
 #define HAL_GPIO_PIN_BMI055_DRDY_G        PAL_LINE(GPIOF,0U)
 #define HAL_GPIO_PIN_CAN1_RX              PAL_LINE(GPIOD,0U)
 #define HAL_GPIO_PIN_CAN1_TX              PAL_LINE(GPIOD,1U)
+#define HAL_GPIO_PIN_FRAM_CS              PAL_LINE(GPIOB,2U)
 #define HAL_GPIO_PIN_GPIO_CAN1_SILENT     PAL_LINE(GPIOD,3U)
 #define HAL_GPIO_PIN_I2C1_SCL             PAL_LINE(GPIOB,6U)
 #define HAL_GPIO_PIN_I2C1_SDA             PAL_LINE(GPIOB,7U)
@@ -212,7 +215,6 @@
 #define HAL_GPIO_PIN_I2C2_SCL             PAL_LINE(GPIOB,10U)
 #define HAL_GPIO_PIN_ICM42688_CS          PAL_LINE(GPIOE,0U)
 #define HAL_GPIO_PIN_ICM42688_DRDY        PAL_LINE(GPIOE,2U)
-#define HAL_GPIO_PIN_IMU2_CS              PAL_LINE(GPIOE,11U)
 #define HAL_GPIO_PIN_JTCK_SWCLK           PAL_LINE(GPIOA,14U)
 #define HAL_GPIO_PIN_JTMS_SWDIO           PAL_LINE(GPIOA,13U)
 #define HAL_GPIO_PIN_LED0                 PAL_LINE(GPIOE,3U)
@@ -695,6 +697,7 @@
 
 /* PORTB:
  PB1 TIM8_CH3N TIM8 AF3 PWM2
+ PB2 FRAM_CS CS
  PB3 TIM2_CH2 TIM2 AF1
  PB5 SPI1_MOSI SPI1 AF5
  PB6 I2C1_SCL I2C1 AF4
@@ -706,7 +709,7 @@
 
 #define VAL_GPIOB_MODER   (PIN_MODE_INPUT(0U) | \
                            PIN_MODE_ALTERNATE(1U) | \
-                           PIN_MODE_INPUT(2U) | \
+                           PIN_MODE_OUTPUT(2U) | \
                            PIN_MODE_ALTERNATE(3U) | \
                            PIN_MODE_INPUT(4U) | \
                            PIN_MODE_ALTERNATE(5U) | \
@@ -757,7 +760,7 @@
 
 #define VAL_GPIOB_PUPDR   (PIN_PUPDR_FLOATING(0U) | \
                            PIN_PUPDR_FLOATING(1U) | \
-                           PIN_PUPDR_FLOATING(2U) | \
+                           PIN_PUPDR_PULLUP(2U) | \
                            PIN_PUPDR_FLOATING(3U) | \
                            PIN_PUPDR_FLOATING(4U) | \
                            PIN_PUPDR_FLOATING(5U) | \
@@ -1053,7 +1056,6 @@
  PE8 UART7_TX UART7 AF7
  PE9 UART7_RTS UART7
  PE10 UART7_CTS UART7 AF7
- PE11 IMU2_CS CS
  PE12 SPI4_SCK SPI4 AF5
  PE13 SPI4_MISO SPI4 AF5
  PE14 SPI4_MOSI SPI4 AF5
@@ -1071,7 +1073,7 @@
                            PIN_MODE_ALTERNATE(8U) | \
                            PIN_MODE_OUTPUT(9U) | \
                            PIN_MODE_ALTERNATE(10U) | \
-                           PIN_MODE_OUTPUT(11U) | \
+                           PIN_MODE_INPUT(11U) | \
                            PIN_MODE_ALTERNATE(12U) | \
                            PIN_MODE_ALTERNATE(13U) | \
                            PIN_MODE_ALTERNATE(14U) | \
@@ -1122,7 +1124,7 @@
                            PIN_PUPDR_PULLUP(8U) | \
                            PIN_PUPDR_PULLDOWN(9U) | \
                            PIN_PUPDR_PULLUP(10U) | \
-                           PIN_PUPDR_PULLUP(11U) | \
+                           PIN_PUPDR_FLOATING(11U) | \
                            PIN_PUPDR_FLOATING(12U) | \
                            PIN_PUPDR_FLOATING(13U) | \
                            PIN_PUPDR_FLOATING(14U) | \
