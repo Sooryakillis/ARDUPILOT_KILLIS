@@ -1,0 +1,2 @@
+startup_stm32h753zitx.o: \
+ C:/Users/SoorayakumarPanneers/Desktop/Git/ARDUPILOT_KILLIS/h753_blink/STM32CubeIDE/Application/User/Startup/startup_stm32h753zitx.s

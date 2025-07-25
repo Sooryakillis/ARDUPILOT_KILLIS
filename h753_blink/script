@@ -1,0 +1,10 @@
+config load "C:\Users\SoorayakumarPanneers\Desktop\Git\ARDUPILOT_KILLIS\h753_blink\h753_blink.ioc"
+project toolchain STM32CubeIDE
+
+SetStructure Advanced
+
+project setCustomFWPath "C:\Users\SoorayakumarPanneers\STM32Cube\Repository\STM32Cube_FW_H7_V1.9.1"
+
+project generate 
+
+exit wait
